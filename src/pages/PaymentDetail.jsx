@@ -22,6 +22,8 @@ function PaymentDetail() {
     return fallback
   }
 
+  const sameId = (a, b) => String(a ?? '') === String(b ?? '')
+
   const getPaymentsCacheKey = (uid) => `paymentsCache:user:${String(uid || '')}`
 
   const statusMeta = useMemo(
@@ -122,7 +124,7 @@ function PaymentDetail() {
 
     try {
       const parsed = JSON.parse(storedUser)
-      const uid = parsed?.id || parsed?.user_id || ''
+      const uid = parsed?.id || parsed?.user_id || parsed?.customer_id || parsed?.customerId || ''
       setCurrentUserId(uid)
     } catch {
       navigate('/login', { replace: true })
@@ -137,8 +139,14 @@ function PaymentDetail() {
       const cached = localStorage.getItem(getPaymentsCacheKey(currentUserId))
       const parsed = cached ? JSON.parse(cached) : null
       if (Array.isArray(parsed)) {
-        const foundCached = parsed.map(normalizePayment).filter(Boolean).find((p) => String(p.payment_id) === String(id))
-        if (foundCached) setPayment(foundCached)
+        const foundCached = parsed
+          .map(normalizePayment)
+          .filter(Boolean)
+          .find((p) => String(p.payment_id) === String(id))
+
+        if (foundCached && sameId(foundCached.user_id, currentUserId)) {
+          setPayment(foundCached)
+        }
       }
     } catch (err) {
       console.warn('Failed to read cached payment detail', err)
@@ -151,14 +159,18 @@ function PaymentDetail() {
       try {
         // Backend GET /payment/{id} is not reliable (controller loads a non-existent relation).
         // Load from list endpoint and select locally.
-        const list = await paymentsAPI.getAll({ user_id: currentUserId })
-        const normalized = list
+        const res = await paymentsAPI.getAll({ user_id: currentUserId })
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+
+        const normalizedAll = list
           .map(normalizePayment)
           .filter(Boolean)
-          .filter((p) => String(p.user_id || '') === String(currentUserId))
+
+        const normalized = normalizedAll.filter((p) => sameId(p.user_id || '', currentUserId))
 
         try {
-          localStorage.setItem(getPaymentsCacheKey(currentUserId), JSON.stringify(list))
+          // Cache only the user-owned normalized payments to prevent cross-user leakage.
+          localStorage.setItem(getPaymentsCacheKey(currentUserId), JSON.stringify(normalized))
         } catch {
           // ignore
         }

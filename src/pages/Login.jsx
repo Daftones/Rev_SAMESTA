@@ -32,7 +32,26 @@ const deriveRole = (user, defaultRole) => {
 const normalizeUser = (user, defaultRole = 'user') => {
   if (!user || typeof user !== 'object') return null
   const role = deriveRole(user, defaultRole)
-  return { ...user, role }
+
+  const idCandidate =
+    user.nik ??
+    user.NIK ??
+    user.no_ktp ??
+    user.noKtp ??
+    user.id ??
+    user.user_id ??
+    user.userId ??
+    user.customer_id ??
+    user.customerId ??
+    user.uuid ??
+    ''
+
+  return {
+    ...user,
+    // Ensure a stable id field exists for pages that expect `user.id`
+    ...(user.id ? null : (idCandidate ? { id: idCandidate } : null)),
+    role,
+  }
 }
 
 const saveUserToStorage = (user) => {
@@ -90,7 +109,13 @@ function Login() {
         userData = userResponse?.user || userResponse?.data?.user || userResponse?.data || userResponse
       } catch (userErr) {
         console.warn('⚠️ Failed to fetch user profile, using login data:', userErr)
-        userData = loginResponse?.user || null
+        // Backend login responses vary widely; try common shapes
+        userData =
+          loginResponse?.user ||
+          loginResponse?.data?.user ||
+          loginResponse?.data?.data?.user ||
+          loginResponse?.data ||
+          null
       }
 
       // Ensure email is set for allowlist matching

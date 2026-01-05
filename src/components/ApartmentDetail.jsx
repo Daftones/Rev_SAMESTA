@@ -129,7 +129,10 @@ function ApartmentDetail() {
   const priceLabel = preference === 'beli' ? 'Harga Jual' : 'Harga Sewa'
   const period = preference === 'sewa' ? '/bulan' : ''
 
-  const handleInquiry = () => navigate(`/inquiry?unit_id=${encodeURIComponent(String(id || ''))}`)
+  const handleInquiry = () => {
+    const unitTypeId = String(apartment?.unit_type_id || apartment?.id || id || '').trim()
+    navigate(`/inquiry?unit_type_id=${encodeURIComponent(unitTypeId)}`, { state: { unitTypeId } })
+  }
   const handleContactAdmin = () => window.open('https://wa.me/6289506516117?text=Halo, saya ingin info lebih lanjut tentang unit ini', '_blank')
 
   const handleFullscreen = () => {

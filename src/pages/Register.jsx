@@ -6,8 +6,23 @@ import { authAPI } from '../services/api'
 
 const normalizeUser = (user, defaultRole = 'user') => {
   if (!user || typeof user !== 'object') return null
+
+  const idCandidate =
+    user.nik ??
+    user.NIK ??
+    user.no_ktp ??
+    user.noKtp ??
+    user.id ??
+    user.user_id ??
+    user.userId ??
+    user.customer_id ??
+    user.customerId ??
+    user.uuid ??
+    ''
+
   return {
     ... user,
+    ...(user.id ? null : (idCandidate ? { id: idCandidate } : null)),
     role: user.role || defaultRole,
   }
 }

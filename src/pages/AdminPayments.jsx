@@ -16,15 +16,21 @@ function AdminPayments() {
 
   const statusMeta = {
     pending: { text: 'Pending', variant: 'warning' },
-    paid: { text: 'Paid', variant: 'success' },
-    success: { text: 'Paid', variant: 'success' },
-    settled: { text: 'Paid', variant: 'success' },
-    awaiting: { text: 'Awaiting', variant: 'info' },
-    awaiting_payment: { text: 'Awaiting', variant: 'info' },
-    failed: { text: 'Failed', variant: 'danger' },
-    cancelled: { text: 'Cancelled', variant: 'secondary' },
+    waiting_verification: { text: 'Menunggu Verifikasi', variant: 'info' },
+    confirmed: { text: 'Terverifikasi', variant: 'success' },
+    rejected: { text: 'Ditolak', variant: 'danger' },
     expired: { text: 'Expired', variant: 'secondary' },
-    refunded: { text: 'Refunded', variant: 'info' },
+  }
+
+  const normalizeStatusForBackend = (status) => {
+    const s = String(status || '').trim().toLowerCase()
+
+    // Common UI aliases that frequently cause backend validation errors
+    if (s === 'approved' || s === 'paid' || s === 'success' || s === 'settled') return 'confirmed'
+    if (s === 'failed' || s === 'cancelled') return 'rejected'
+    if (s === 'awaiting' || s === 'awaiting_payment') return 'waiting_verification'
+
+    return s
   }
 
   const resolveFileUrl = (path) => {
@@ -130,11 +136,12 @@ function AdminPayments() {
   const handleStatusUpdate = async (paymentId, status) => {
     setUpdatingId(paymentId)
     try {
-      await paymentsAPI.updateStatus(paymentId, status)
+      const normalizedStatus = normalizeStatusForBackend(status)
+      await paymentsAPI.updateStatus(paymentId, normalizedStatus)
       const now = new Date().toISOString()
-      setPayments((prev) => prev.map((p) => (p.id === paymentId ? { ...p, status, updatedAt: now } : p)))
+      setPayments((prev) => prev.map((p) => (p.id === paymentId ? { ...p, status: normalizedStatus, updatedAt: now } : p)))
       if (selectedPayment?.id === paymentId) {
-        setSelectedPayment({ ...selectedPayment, status, updatedAt: now })
+        setSelectedPayment({ ...selectedPayment, status: normalizedStatus, updatedAt: now })
       }
     } catch (err) {
       console.error('Failed to update payment status', err)
@@ -187,9 +194,9 @@ function AdminPayments() {
             <Form.Select value={filters.status} onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}>
               <option value="all">Semua</option>
               <option value="pending">Pending</option>
-              <option value="paid">Paid</option>
-              <option value="failed">Failed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="waiting_verification">Menunggu Verifikasi</option>
+              <option value="confirmed">Terverifikasi</option>
+              <option value="rejected">Ditolak</option>
               <option value="expired">Expired</option>
             </Form.Select>
           </div>
@@ -257,14 +264,14 @@ function AdminPayments() {
                         <Button variant="outline-primary" size="sm" onClick={() => handleViewDetails(payment)} className="w-100">
                           Detail
                         </Button>
-                        <Button variant="outline-success" size="sm" onClick={() => handleStatusUpdate(payment.id, 'paid')} disabled={!!updatingId} className="w-100">
-                          Tandai Paid
+                        <Button variant="outline-info" size="sm" onClick={() => handleStatusUpdate(payment.id, 'waiting_verification')} disabled={!!updatingId} className="w-100">
+                          Menunggu Verifikasi
                         </Button>
-                        <Button variant="outline-warning" size="sm" onClick={() => handleStatusUpdate(payment.id, 'pending')} disabled={!!updatingId} className="w-100">
-                          Pending
+                        <Button variant="outline-success" size="sm" onClick={() => handleStatusUpdate(payment.id, 'confirmed')} disabled={!!updatingId} className="w-100">
+                          Verifikasi
                         </Button>
-                        <Button variant="outline-danger" size="sm" onClick={() => handleStatusUpdate(payment.id, 'failed')} disabled={!!updatingId} className="w-100">
-                          Gagal
+                        <Button variant="outline-danger" size="sm" onClick={() => handleStatusUpdate(payment.id, 'rejected')} disabled={!!updatingId} className="w-100">
+                          Tolak
                         </Button>
                       </div>
                     </td>
@@ -340,14 +347,14 @@ function AdminPayments() {
                 <Card.Body>
                   <h5 className="mb-3">Perbarui Status</h5>
                   <div className="d-flex flex-wrap gap-2">
-                    <Button variant="success" onClick={() => handleStatusUpdate(selectedPayment.id, 'paid')} disabled={!!updatingId} className="w-100 flex-sm-grow-0">
-                      Tandai Paid
+                    <Button variant="info" onClick={() => handleStatusUpdate(selectedPayment.id, 'waiting_verification')} disabled={!!updatingId} className="w-100 flex-sm-grow-0">
+                      Menunggu Verifikasi
                     </Button>
-                    <Button variant="warning" onClick={() => handleStatusUpdate(selectedPayment.id, 'pending')} disabled={!!updatingId} className="w-100 flex-sm-grow-0">
-                      Pending
+                    <Button variant="success" onClick={() => handleStatusUpdate(selectedPayment.id, 'confirmed')} disabled={!!updatingId} className="w-100 flex-sm-grow-0">
+                      Verifikasi
                     </Button>
-                    <Button variant="danger" onClick={() => handleStatusUpdate(selectedPayment.id, 'failed')} disabled={!!updatingId} className="w-100 flex-sm-grow-0">
-                      Gagal
+                    <Button variant="danger" onClick={() => handleStatusUpdate(selectedPayment.id, 'rejected')} disabled={!!updatingId} className="w-100 flex-sm-grow-0">
+                      Tolak
                     </Button>
                   </div>
                 </Card.Body>

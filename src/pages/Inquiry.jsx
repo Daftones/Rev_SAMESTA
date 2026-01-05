@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Container, Form, Button, Card, Row, Col, Alert, Modal } from 'react-bootstrap'
 import Navbar from '../components/Navbar'
-import { authAPI, inquiriesAPI, unitTypesAPI } from '../services/api'
+import { authAPI, inquiriesAPI, unitTypesAPI, unitsAPI } from '../services/api'
 
 function Inquiry() {
   const navigate = useNavigate()
@@ -18,23 +18,36 @@ function Inquiry() {
   const [loadingSelectedUnit, setLoadingSelectedUnit] = useState(false)
   const [selectedUnit, setSelectedUnit] = useState(null)
 
-  const unitIdFromUrl = (() => {
+  const unitParams = (() => {
     const params = new URLSearchParams(location.search || '')
-    return (
+    const stateObj = (location.state && typeof location.state === 'object') ? location.state : {}
+
+    // unit_id must match backend `units.unit_id`
+    const unitId = String(
+      stateObj.unitId ||
+      stateObj.unit_id ||
       params.get('unit_id') ||
       params.get('unitId') ||
+      ''
+    ).trim()
+
+    // unit_type_id can be passed from type detail pages
+    const unitTypeId = String(
+      stateObj.unitTypeId ||
+      stateObj.unit_type_id ||
+      params.get('unit_type_id') ||
+      params.get('unitTypeId') ||
+      // legacy aliases used by older links
       params.get('apartment_id') ||
       params.get('apartmentId') ||
       ''
-    )
+    ).trim()
+
+    return { unitId, unitTypeId }
   })()
 
-  const fixedUnitId = (() => {
-    const fromState = (location.state && typeof location.state === 'object')
-      ? (location.state.unitId || location.state.unit_id || '')
-      : ''
-    return String(fromState || unitIdFromUrl || '').trim()
-  })()
+  const [resolvedUnitId, setResolvedUnitId] = useState('')
+  const [resolvedUnitTypeId, setResolvedUnitTypeId] = useState('')
   
   const [formData, setFormData] = useState({
     userId: '',
@@ -47,6 +60,7 @@ function Inquiry() {
   const [currentUserId, setCurrentUserId] = useState('')
   const [currentUser, setCurrentUser] = useState(null)
   const [currentUserEmail, setCurrentUserEmail] = useState('')
+  const [lastCreatedInquiryId, setLastCreatedInquiryId] = useState('')
 
   const [photoPreview, setPhotoPreview] = useState(null)
 
@@ -98,12 +112,70 @@ function Inquiry() {
   }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
-    if (!fixedUnitId) return
-    setFormData((prev) => ({
-      ...prev,
-      unitId: fixedUnitId,
-    }))
-  }, [fixedUnitId])
+    // Resolve to the backend unit primary key expected by validation (often `exists:units,id`).
+    const resolveUnit = async () => {
+      const rawUnitId = unitParams.unitId
+      const rawUnitTypeId = unitParams.unitTypeId
+
+      const isNumeric = (value) => /^\d+$/.test(String(value || '').trim())
+
+      // 1) If we already have a unit identifier, map it to units.id when possible
+      if (rawUnitId) {
+        try {
+          const res = await unitsAPI.getAll()
+          const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+
+          // If rawUnitId is numeric, assume it's units.id
+          const found = isNumeric(rawUnitId)
+            ? list.find((u) => String(u.id || u.unit_id || u.unitId || '') === String(rawUnitId))
+            : list.find((u) => String(u.unit_id || u.unitId || '') === String(rawUnitId))
+
+          const payloadUnitId = String((found?.id ?? (isNumeric(rawUnitId) ? rawUnitId : '')) || '').trim() || String(rawUnitId).trim()
+          setResolvedUnitId(payloadUnitId)
+          setFormData((prev) => ({ ...prev, unitId: payloadUnitId }))
+
+          const typeId = found?.unit_type_id || found?.unitTypeId || ''
+          if (typeId) setResolvedUnitTypeId(String(typeId))
+        } catch {
+          // If unit list cannot be fetched, fall back to whatever was provided
+          const payloadUnitId = String(rawUnitId).trim()
+          setResolvedUnitId(payloadUnitId)
+          setFormData((prev) => ({ ...prev, unitId: payloadUnitId }))
+        }
+        return
+      }
+
+      // 2) If only unit_type_id is provided, pick a unit that belongs to that type and use its `id`
+      if (rawUnitTypeId) {
+        try {
+          const res = await unitsAPI.getAll()
+          const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+          const found = list.find((u) => String(u.unit_type_id || u.unitTypeId || '') === String(rawUnitTypeId))
+          const payloadUnitId = String((found?.id ?? found?.unit_id ?? found?.unitId ?? found?.uuid ?? '') || '').trim()
+          if (payloadUnitId) {
+            setResolvedUnitTypeId(rawUnitTypeId)
+            setResolvedUnitId(payloadUnitId)
+            setFormData((prev) => ({ ...prev, unitId: payloadUnitId }))
+          } else {
+            setResolvedUnitTypeId(rawUnitTypeId)
+            setResolvedUnitId('')
+          }
+        } catch {
+          setResolvedUnitTypeId(rawUnitTypeId)
+          setResolvedUnitId('')
+        }
+        return
+      }
+
+      // 3) Nothing provided
+      setResolvedUnitId('')
+      setResolvedUnitTypeId('')
+    }
+
+    resolveUnit()
+    // Only re-run when URL/state inputs change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, location.state])
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
@@ -170,7 +242,7 @@ function Inquiry() {
     setPhotoPreview(null)
   }
 
-  const loadHistory = async (uid = '', email = '') => {
+  const loadHistory = async (uid = '') => {
     setLoadingHistory(true)
     try {
       const response = await inquiriesAPI.getAll(uid ? { user_id: uid } : {})
@@ -180,15 +252,20 @@ function Inquiry() {
         .filter(Boolean)
         .filter((item) => {
           if (uid && String(item.userId) === String(uid)) return true
-          if (!uid && email && String(item.userId).toLowerCase() === String(email).toLowerCase()) return true
-          if (!uid && !email) return true
+          if (!uid) return true
           return false
         })
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       setHistory(normalized)
     } catch (err) {
-      console.error('Gagal memuat riwayat inquiry', err)
-      showAlertMessage('Gagal memuat riwayat inquiry. Coba lagi.', 'danger')
+      console.error('Gagal memuat riwayat inquiry:', err)
+      console.error('Error response:', err.response?.data)
+      console.error('Error status:', err.response?.status)
+      
+      // Only show error if it's not a 401/403 (authorization issue)
+      if (err.response?.status !== 401 && err.response?.status !== 403) {
+        showAlertMessage('Gagal memuat riwayat inquiry. Coba lagi.', 'danger')
+      }
     } finally {
       setLoadingHistory(false)
     }
@@ -209,6 +286,19 @@ function Inquiry() {
       const parsedEmail = parsed?.email || ''
       if (parsedEmail) setCurrentUserEmail(parsedEmail)
 
+      // If we already have a stable id in storage, do NOT call /user (your backend returns Admin only)
+      const storedUid = parsed?.nik ?? parsed?.NIK ?? parsed?.no_ktp ?? parsed?.noKtp ?? parsed?.id ?? parsed?.user_id ?? parsed?.userId ?? parsed?.customer_id ?? parsed?.customerId ?? parsed?.uuid ?? ''
+      if (storedUid) {
+        if (parsed && typeof parsed === 'object') setCurrentUser(parsed)
+        setCurrentUserId(storedUid)
+        setFormData((prev) => ({
+          ...prev,
+          userId: String(storedUid || ''),
+        }))
+        loadHistory(storedUid)
+        return
+      }
+
       try {
         // Always try to resolve a real backend user id via /user
         const profile = await authAPI.getProfile()
@@ -226,18 +316,18 @@ function Inquiry() {
         const resolvedEmail = mergedUser?.email || parsedEmail || ''
         if (resolvedEmail) setCurrentUserEmail(resolvedEmail)
 
-        const uid = mergedUser?.id ?? mergedUser?.user_id ?? mergedUser?.userId ?? mergedUser?.uuid ?? ''
+        const uid = mergedUser?.nik ?? mergedUser?.NIK ?? mergedUser?.no_ktp ?? mergedUser?.noKtp ?? mergedUser?.id ?? mergedUser?.user_id ?? mergedUser?.userId ?? mergedUser?.customer_id ?? mergedUser?.customerId ?? mergedUser?.uuid ?? ''
         if (uid) setCurrentUserId(uid)
         setFormData((prev) => ({
           ...prev,
-          // Keep this field for display only
-          userId: resolvedEmail || String(uid || ''),
+          // Display: only show actual backend user id / NIK (never fallback to email)
+          userId: String(uid || ''),
         }))
-        // Prefer uid filter; fallback to email filter
-        loadHistory(uid, resolvedEmail)
+        // Prefer uid filter; no email fallback for identity
+        loadHistory(uid)
       } catch (err) {
         // If profile cannot be fetched, fallback to stored user (must still have an id)
-        const uid = parsed?.id ?? parsed?.user_id ?? parsed?.userId ?? parsed?.uuid ?? ''
+        const uid = parsed?.nik ?? parsed?.NIK ?? parsed?.no_ktp ?? parsed?.noKtp ?? parsed?.id ?? parsed?.user_id ?? parsed?.userId ?? parsed?.customer_id ?? parsed?.customerId ?? parsed?.uuid ?? ''
         if (parsed && typeof parsed === 'object') setCurrentUser(parsed)
 
         const resolvedEmail = parsed?.email || ''
@@ -245,9 +335,9 @@ function Inquiry() {
         if (uid) setCurrentUserId(uid)
         setFormData((prev) => ({
           ...prev,
-          userId: resolvedEmail || String(uid || ''),
+          userId: String(uid || ''),
         }))
-        loadHistory(uid, resolvedEmail)
+        loadHistory(uid)
       }
     }
 
@@ -256,10 +346,10 @@ function Inquiry() {
 
   useEffect(() => {
     const loadSelectedUnit = async () => {
-      if (!fixedUnitId) return
+      if (!resolvedUnitTypeId) return
       setLoadingSelectedUnit(true)
       try {
-        const res = await unitTypesAPI.getOne(fixedUnitId)
+        const res = await unitTypesAPI.getOne(resolvedUnitTypeId)
         const data = res?.data || res
         setSelectedUnit(data)
       } catch (err) {
@@ -271,15 +361,15 @@ function Inquiry() {
     }
 
     loadSelectedUnit()
-  }, [fixedUnitId])
+  }, [resolvedUnitTypeId])
 
   useEffect(() => {
     if (!currentUserId) return undefined
     const interval = setInterval(() => {
-      loadHistory(currentUserId, currentUserEmail)
+      loadHistory(currentUserId)
     }, 10000)
     return () => clearInterval(interval)
-  }, [currentUserId, currentUserEmail])
+  }, [currentUserId])
 
   useEffect(() => () => stopCamera(), [])
 
@@ -309,41 +399,73 @@ function Inquiry() {
       return
     }
 
-    const effectiveUserId = currentUser?.id ?? currentUser?.user_id ?? currentUserId ?? ''
+    const effectiveUserId = currentUser?.nik ?? currentUser?.NIK ?? currentUser?.no_ktp ?? currentUser?.noKtp ?? currentUser?.id ?? currentUser?.user_id ?? currentUser?.customer_id ?? currentUser?.customerId ?? currentUserId ?? ''
     if (!effectiveUserId) {
       showAlertMessage('User ID tidak ditemukan. Silakan login ulang.', 'danger')
       return
     }
 
-    if (!fixedUnitId) {
+    // Prevent accidental email being used as user_id
+    const effectiveUserIdStr = String(effectiveUserId)
+    const looksLikeEmail = effectiveUserIdStr.includes('@')
+    const isNumericId = /^\d+$/.test(effectiveUserIdStr.trim())
+    const isUuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveUserIdStr.trim())
+    if (looksLikeEmail || (!isNumericId && !isUuidLike)) {
+      showAlertMessage('User ID tidak valid. Pastikan akun Anda memiliki ID dari backend (angka atau UUID), lalu login ulang.', 'danger')
+      return
+    }
+
+    if (!resolvedUnitId) {
       showAlertMessage('Unit tidak ditemukan. Buka detail apartemen lalu ajukan inquiry dari sana.', 'danger')
       return
     }
 
-    const normalizedUserId = Number.isFinite(Number(effectiveUserId)) ? Number(effectiveUserId) : effectiveUserId
+    // Keep as string to avoid losing leading zeros (common for NIK)
+    const normalizedUserId = effectiveUserIdStr.trim()
     const payload = {
       user_id: normalizedUserId,
-      unit_id: fixedUnitId,
+      unit_id: resolvedUnitId,
       purchase_type: formData.purchaseType,
       address: formData.address,
       // Backend expects `identity_card` (required)
       identity_card: [formData.idCardPhoto],
-      // Keep legacy key for compatibility
-      id_card_photo: formData.idCardPhoto,
-      user_identifier: currentUser?.email || currentUserEmail || formData.userId,
     }
 
     setSubmitting(true)
     try {
+      // Verify token exists before sending
+      const token = localStorage.getItem('authToken')
+      if (!token) {
+        showAlertMessage('Session expired. Please login again.', 'danger')
+        navigate('/login')
+        return
+      }
+
+      console.log('🚀 Sending inquiry...', {
+        user_id: normalizedUserId,
+        unit_id: resolvedUnitId,
+        purchase_type: formData.purchaseType,
+        has_photo: !!formData.idCardPhoto,
+        token_exists: !!token
+      })
+
       const response = await inquiriesAPI.create(payload)
+      
+      console.log('✅ Inquiry created successfully', response)
+      
       const created = normalizeInquiry(response?.data || response)
       if (created) {
         setHistory((prev) => [created, ...prev])
+        if (created?.id) setLastCreatedInquiryId(String(created.id))
       }
-      await loadHistory(effectiveUserId, currentUserEmail)
+      await loadHistory(effectiveUserId)
       setShowSuccessModal(true)
     } catch (err) {
-      console.error('Gagal mengirim inquiry', err)
+      console.error('❌ Gagal mengirim inquiry:', err)
+      console.error('Error response:', err.response?.data)
+      console.error('Error status:', err.response?.status)
+      console.error('Error headers:', err.response?.headers)
+      
       const message = extractBackendErrorMessage(err) || 'Gagal mengirim inquiry. Coba lagi.'
       showAlertMessage(message, 'danger')
     } finally {
@@ -356,8 +478,8 @@ function Inquiry() {
     
     // Reset form
     setFormData({
-      userId: currentUser?.email || String(currentUserId || ''),
-      unitId: '',
+      userId: String((currentUser?.nik ?? currentUser?.NIK ?? currentUser?.no_ktp ?? currentUser?.noKtp ?? currentUser?.id ?? currentUser?.user_id ?? currentUser?.customer_id ?? currentUser?.customerId ?? currentUserId) || ''),
+      unitId: resolvedUnitId,
       purchaseType: 'rent',
       address: '',
       idCardPhoto: null
@@ -365,9 +487,10 @@ function Inquiry() {
     setPhotoPreview(null)
     
     // Refresh riwayat setelah submit berhasil
-    loadHistory(currentUserId, currentUserEmail)
-    // Navigate to home
-    navigate('/')
+    loadHistory(currentUserId)
+    // After submitting an inquiry, send user to payments to continue the flow
+    const qs = lastCreatedInquiryId ? `?inquiry_id=${encodeURIComponent(String(lastCreatedInquiryId))}` : ''
+    navigate(`/payments${qs}`)
   }
 
   return (
@@ -390,7 +513,7 @@ function Inquiry() {
                     </Alert>
                   )}
 
-                  {!fixedUnitId ? (
+                  {!resolvedUnitId ? (
                     <Alert variant="warning" className="mb-0">
                       Inquiry harus diajukan dari halaman detail apartemen agar unit terikat otomatis.
                       <div className="mt-3 d-flex gap-2 flex-wrap">
@@ -414,12 +537,24 @@ function Inquiry() {
                     </Form.Group>
 
                     <Form.Group className="mb-3">
+                      <Form.Label>Email</Form.Label>
+                      <Form.Control
+                        type="email"
+                        value={currentUserEmail || currentUser?.email || ''}
+                        readOnly
+                        disabled
+                        placeholder="Email"
+                      />
+                      <small className="text-muted">Hanya untuk informasi, tidak dikirim sebagai user_id.</small>
+                    </Form.Group>
+
+                    <Form.Group className="mb-3">
                       <Form.Label>Unit</Form.Label>
                       <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-slate-800">
                         <div className="fw-semibold">
                           {loadingSelectedUnit
                             ? 'Memuat unit...'
-                            : (selectedUnit?.name || `Unit ID: ${fixedUnitId}`)}
+                            : (selectedUnit?.name || selectedUnit?.type || `Unit ID: ${resolvedUnitId}`)}
                         </div>
                         {!loadingSelectedUnit && selectedUnit?.floor && (
                           <div className="text-muted small">Lantai {selectedUnit.floor}</div>
@@ -587,7 +722,12 @@ function Inquiry() {
                           )}
                           {item.status === 'approved' && (
                             <div className="mt-2 d-flex flex-wrap gap-2">
-                              <Button variant="dark" size="sm" className="rounded-full" onClick={() => navigate('/payments')}>
+                              <Button
+                                variant="dark"
+                                size="sm"
+                                className="rounded-full"
+                                onClick={() => navigate(`/payments?inquiry_id=${encodeURIComponent(String(item.id || ''))}`)}
+                              >
                                 Lanjut ke Pembayaran
                               </Button>
                             </div>
@@ -635,7 +775,7 @@ function Inquiry() {
             Terima kasih telah mengirimkan inquiry Anda. Tim kami akan segera menghubungi Anda untuk proses lebih lanjut.
           </p>
           <Button variant="dark" size="lg" onClick={handleModalClose} className="px-5">
-            Kembali ke Beranda
+            Lanjut ke Pembayaran
           </Button>
         </Modal.Body>
       </Modal>

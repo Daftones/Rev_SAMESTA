@@ -168,7 +168,16 @@ function AdminPaymentDetail() {
     setUpdating(true)
     setError('')
     try {
-      await paymentsAPI.updateStatus(payment.payment_id, status)
+      const s = String(status || '').trim().toLowerCase()
+      const normalizedStatus = (s === 'approved' || s === 'paid' || s === 'success' || s === 'settled')
+        ? 'confirmed'
+        : (s === 'failed' || s === 'cancelled')
+          ? 'rejected'
+          : (s === 'awaiting' || s === 'awaiting_payment')
+            ? 'waiting_verification'
+            : s
+
+      await paymentsAPI.updateStatus(payment.payment_id, normalizedStatus)
       await load()
     } catch (err) {
       console.error('Failed to update status', err)

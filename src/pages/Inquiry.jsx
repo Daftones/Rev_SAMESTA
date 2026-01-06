@@ -178,31 +178,28 @@ function Inquiry() {
   };
 
   const capturePhoto = () => {
-    if (videoRef.current && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const video = videoRef.current;
+  if (videoRef.current && canvasRef.current) {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
 
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
 
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      canvas.toBlob(
-        (blob) => {
-          const file = new File([blob], "id-card.jpg", { type: "image/jpeg" });
-          setFormData((prev) => ({
-            ...prev,
-            idCardPhoto: file,
-          }));
-          setPhotoPreview(canvas.toDataURL("image/jpeg"));
-          stopCamera();
-        },
-        "image/jpeg",
-        0.95
-      );
-    }
-  };
+    // Ambil Base64 langsung dari canvas
+    const base64Image = canvas.toDataURL("image/jpeg", 0.95);
+
+    setFormData((prev) => ({
+      ...prev,
+      idCardPhoto: base64Image, // ✅ Base64 string
+    }));
+
+    setPhotoPreview(base64Image);
+    stopCamera();
+  }
+};
 
   const stopCamera = () => {
     if (stream) {
@@ -414,6 +411,7 @@ function Inquiry() {
       );
       return;
     }
+    console.log (formData.idCardPhoto);
 
     const effectiveUserId =
       currentUser?.id ?? currentUser?.user_id ?? currentUserId ?? "";

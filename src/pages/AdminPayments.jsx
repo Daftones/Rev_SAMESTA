@@ -280,7 +280,31 @@ function AdminPayments() {
   }
 
   const exportToPDF = () => {
-    const doc = new jsPDF()
+    const blobToDataUrl = (blob) => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onerror = () => reject(new Error('Failed to read blob'))
+        reader.onload = () => resolve(String(reader.result || ''))
+        reader.readAsDataURL(blob)
+      })
+    }
+
+    const guessImageFormat = (dataUrlOrMime) => {
+      const s = String(dataUrlOrMime || '').toLowerCase()
+      if (s.includes('png')) return 'PNG'
+      return 'JPEG'
+    }
+
+    const fetchImageAsDataUrl = async (url) => {
+      if (!url) throw new Error('Empty image url')
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const dataUrl = await blobToDataUrl(blob)
+      return { dataUrl, mime: blob.type || '' }
+    }
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
     
     // Add title
     doc.setFontSize(18)
@@ -306,24 +330,30 @@ function AdminPayments() {
     // Prepare table data
     const tableData = filteredPayments.map((payment, index) => {
       const inquiry = inquiriesMap[payment.inquiryId]
+      const unitId = inquiry?.unitId || '-'
+      const txType = String(inquiry?.purchaseType || '').toLowerCase() === 'rent' ? 'Sewa' : 'Beli'
       return [
         index + 1,
         payment.reference || payment.id,
         payment.inquiryId || '-',
         inquiry?.userId || payment.userId || '-',
+        unitId,
+        txType,
         formatCurrency(getEffectiveAmount(payment)),
         getStatusText(payment.status),
         payment.method || '-',
-        formatDate(payment.dueDate)
+        formatDate(payment.dueDate),
+        payment.invoiceUrl || '',
+        payment.proofUrl || '',
       ]
     })
     
     // Add table
     doc.autoTable({
       startY: yPos,
-      head: [['#', 'Invoice', 'Inquiry', 'User', 'Jumlah', 'Status', 'Metode', 'Jatuh Tempo']],
+      head: [['#', 'Invoice', 'Inquiry', 'User', 'Unit', 'Tipe', 'Jumlah', 'Status', 'Metode', 'Jatuh Tempo', 'Invoice URL', 'Proof URL']],
       body: tableData,
-      styles: { fontSize: 8 },
+      styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
       headStyles: { fillColor: [15, 23, 42] }
     })
     
@@ -335,9 +365,45 @@ function AdminPayments() {
     const totalAmount = filteredPayments.reduce((sum, p) => sum + getEffectiveAmount(p), 0)
     doc.text(`Total Nilai: ${formatCurrency(totalAmount)}`, 14, finalY + 17)
     
-    // Save PDF
-    const fileName = `pembayaran_${new Date().toISOString().split('T')[0]}.pdf`
-    doc.save(fileName)
+    // Attach proof/invoice as separate pages (best-effort). If CORS blocks embedding, keep URLs.
+    const addAttachmentPage = async (payment, label, url) => {
+      if (!url) return
+      doc.addPage('a4', 'portrait')
+      doc.setFontSize(14)
+      doc.text(`Pembayaran ${payment.reference || payment.id} • ${label}`, 40, 40)
+      doc.setFontSize(10)
+      doc.text(`Inquiry: ${String(payment.inquiryId || '-')}`, 40, 58)
+      doc.text(`URL: ${String(url)}`, 40, 74, { maxWidth: 515 })
+      try {
+        const { dataUrl, mime } = await fetchImageAsDataUrl(url)
+        const format = guessImageFormat(mime || dataUrl)
+        const pageW = doc.internal.pageSize.getWidth()
+        const pageH = doc.internal.pageSize.getHeight()
+        const margin = 40
+        const maxW = pageW - margin * 2
+        const maxH = pageH - 120
+        doc.addImage(dataUrl, format, margin, 110, maxW, maxH, undefined, 'FAST')
+      } catch (err) {
+        doc.setTextColor(180, 0, 0)
+        doc.text(`Tidak bisa embed file (kemungkinan CORS/URL invalid atau bukan gambar): ${String(err?.message || err)}`, 40, 100, { maxWidth: 515 })
+        doc.setTextColor(0, 0, 0)
+      }
+    }
+
+    ;(async () => {
+      try {
+        for (const p of filteredPayments) {
+          await addAttachmentPage(p, 'Invoice', p.invoiceUrl)
+          await addAttachmentPage(p, 'Bukti Pembayaran', p.proofUrl)
+        }
+
+        const fileName = `pembayaran_${new Date().toISOString().split('T')[0]}.pdf`
+        doc.save(fileName)
+      } catch (err) {
+        console.error('Failed to export payments PDF', err)
+        setError('Gagal export PDF pembayaran. Silakan coba lagi. (Jika bukti tidak ikut, kemungkinan diblokir CORS.)')
+      }
+    })()
   }
 
   const exportToExcel = () => {

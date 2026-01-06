@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Container, Table, Badge, Button, Modal, Card, Row, Col, Form, Alert, Spinner } from 'react-bootstrap'
-import { inquiriesAPI } from '../services/api'
+import jsPDF from 'jspdf'
+import 'jspdf-autotable'
+import { inquiriesAPI, unitTypesAPI } from '../services/api'
 
 function AdminInquiries() {
   const [inquiries, setInquiries] = useState([])
@@ -97,7 +99,9 @@ function AdminInquiries() {
     return {
       id: raw.id || raw.inquiry_id || raw.uuid || raw._id,
       userId: raw.user_id || raw.userId || raw.user_identifier,
+      userIdentifier: raw.user_identifier || raw.userIdentifier || raw.email || '',
       unitId: raw.unit_id || raw.unitId,
+      unitTypeId: raw.unit_type_id || raw.unitTypeId || raw.unit_type || raw.unitType || '',
       purchaseType: raw.purchase_type || raw.purchaseType || 'rent',
       status: normalizeStatus(raw),
       address: raw.address || '',
@@ -106,6 +110,30 @@ function AdminInquiries() {
       idCardPhoto: idCardPhotos[0] || singlePhoto,
       timeline: Array.isArray(raw.timeline) ? raw.timeline : [],
     }
+  }
+
+  const blobToDataUrl = (blob) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(new Error('Failed to read blob'))
+      reader.onload = () => resolve(String(reader.result || ''))
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  const guessImageFormat = (dataUrlOrMime) => {
+    const s = String(dataUrlOrMime || '').toLowerCase()
+    if (s.includes('png')) return 'PNG'
+    return 'JPEG'
+  }
+
+  const fetchImageAsDataUrl = async (url) => {
+    if (!url) throw new Error('Empty image url')
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const blob = await res.blob()
+    const dataUrl = await blobToDataUrl(blob)
+    return { dataUrl, mime: blob.type || '' }
   }
 
   const handleImageError = (e, src) => {
@@ -237,13 +265,133 @@ function AdminInquiries() {
     URL.revokeObjectURL(url)
   }
 
-  const exportPDF = () => {
-    const printWindow = window.open('', '_blank')
-    const rows = filteredInquiries.map((inq) => `<tr><td>${inq.id}</td><td>${inq.userId}</td><td>${inq.unitId}</td><td>${inq.purchaseType}</td><td>${formatDate(inq.createdAt)}</td></tr>`).join('')
-    printWindow.document.write(`<!doctype html><html><head><title>Inquiries</title></head><body><table border="1" cellspacing="0" cellpadding="6"><thead><tr><th>ID</th><th>User ID</th><th>Unit ID</th><th>Tipe</th><th>Tanggal</th></tr></thead><tbody>${rows}</tbody></table></body></html>`)
-    printWindow.document.close()
-    printWindow.focus()
-    printWindow.print()
+  const exportPDF = async () => {
+    setError('')
+
+    try {
+      // Optional enrichment so PDF can include unit info similar to admin context.
+      let unitTypesMap = {}
+      try {
+        const res = await unitTypesAPI.getAll()
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+        list.forEach((raw) => {
+          const id = String(raw?.unit_type_id ?? raw?.id ?? raw?.uuid ?? '').trim()
+          if (!id) return
+          unitTypesMap[id] = {
+            id,
+            name: String(raw?.name || raw?.unit_name || raw?.title || '').trim(),
+            rentPrice: Number(raw?.rent_price ?? raw?.rentPrice),
+            salePrice: Number(raw?.sale_price ?? raw?.salePrice),
+          }
+        })
+      } catch (err) {
+        console.warn('Failed to fetch unit types for inquiries PDF export', err)
+      }
+
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
+      const pageWidth = doc.internal.pageSize.getWidth()
+
+      doc.setFontSize(16)
+      doc.text('Laporan Inquiry (Admin)', 40, 40)
+      doc.setFontSize(10)
+      doc.text(`Diekspor: ${formatDate(new Date().toISOString())}`, 40, 58)
+      doc.text(`Total data: ${filteredInquiries.length}`, 40, 72)
+
+      const tableData = filteredInquiries.map((inq, idx) => {
+        const unitType = unitTypesMap[String(inq.unitTypeId || '').trim()]
+        const isRent = String(inq.purchaseType || '').toLowerCase() === 'rent'
+        const derivedPrice = unitType
+          ? (isRent ? unitType.rentPrice : unitType.salePrice)
+          : null
+
+        return [
+          idx + 1,
+          String(inq.id || ''),
+          String(inq.userId || ''),
+          String(inq.userIdentifier || ''),
+          String(inq.unitId || ''),
+          String(inq.unitTypeId || ''),
+          unitType?.name || '',
+          isRent ? 'Sewa' : 'Beli',
+          String(inq.status || ''),
+          String(inq.address || ''),
+          formatDate(inq.createdAt),
+          Number.isFinite(Number(derivedPrice)) ? String(derivedPrice) : '',
+          (Array.isArray(inq.idCardPhotos) && inq.idCardPhotos.length > 0)
+            ? String(inq.idCardPhotos[0] || '')
+            : String(inq.idCardPhoto || ''),
+        ]
+      })
+
+      doc.autoTable({
+        startY: 90,
+        head: [[
+          '#',
+          'Inquiry ID',
+          'User ID / NIK',
+          'User Identifier',
+          'Unit ID',
+          'Unit Type ID',
+          'Unit Name',
+          'Tipe',
+          'Status',
+          'Alamat',
+          'Tanggal',
+          'Harga (derived)',
+          'Foto KTP (URL)',
+        ]],
+        body: tableData,
+        styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
+        headStyles: { fillColor: [15, 23, 42] },
+        columnStyles: {
+          9: { cellWidth: 180 },
+          12: { cellWidth: Math.max(140, Math.min(220, pageWidth - 80)) },
+        },
+      })
+
+      // Attach KTP images as separate pages (best-effort). If CORS blocks embedding, keep URLs.
+      for (const inq of filteredInquiries) {
+        const photos = Array.isArray(inq.idCardPhotos) && inq.idCardPhotos.length > 0
+          ? inq.idCardPhotos
+          : (inq.idCardPhoto ? [inq.idCardPhoto] : [])
+
+        if (photos.length === 0) continue
+
+        for (let idx = 0; idx < photos.length; idx += 1) {
+          const url = photos[idx]
+          if (!url) continue
+
+          doc.addPage('a4', 'portrait')
+          doc.setFontSize(14)
+          doc.text(`Inquiry ${String(inq.id || '')} • Foto KTP ${idx + 1}`, 40, 40)
+          doc.setFontSize(10)
+          doc.text(`User: ${String(inq.userId || '')}`, 40, 58)
+          doc.text(`Unit: ${String(inq.unitId || '')}`, 40, 72)
+          doc.text(`URL: ${String(url)}`, 40, 86, { maxWidth: 515 })
+
+          try {
+            const { dataUrl, mime } = await fetchImageAsDataUrl(url)
+            const format = guessImageFormat(mime || dataUrl)
+            const pageW = doc.internal.pageSize.getWidth()
+            const pageH = doc.internal.pageSize.getHeight()
+            const margin = 40
+            const maxW = pageW - margin * 2
+            const maxH = pageH - 120
+            doc.addImage(dataUrl, format, margin, 110, maxW, maxH, undefined, 'FAST')
+          } catch (err) {
+            doc.setTextColor(180, 0, 0)
+            doc.text(`Tidak bisa embed gambar (kemungkinan CORS/URL invalid): ${String(err?.message || err)}`, 40, 110, { maxWidth: 515 })
+            doc.setTextColor(0, 0, 0)
+          }
+        }
+      }
+
+      const fileName = `inquiries_${new Date().toISOString().split('T')[0]}.pdf`
+      doc.save(fileName)
+    } catch (err) {
+      console.error('Failed to export inquiries PDF', err)
+      setError('Gagal export PDF inquiry. Silakan coba lagi. (Jika foto tidak ikut, kemungkinan diblokir CORS.)')
+    }
   }
 
   return (

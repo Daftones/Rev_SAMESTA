@@ -110,6 +110,7 @@ function App() {
   const location = useLocation()
   const isAdminPage = location.pathname.startsWith('/admin')
   const isApartmentDetailPage = location.pathname.startsWith('/apartment/')
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/register'
 
   return (
     <>
@@ -135,7 +136,7 @@ function App() {
         </Route>
       </Routes>
       {!isAdminPage && <Footer />}
-      {!isAdminPage && !isApartmentDetailPage && <WhatsAppButton />}
+      {!isAdminPage && !isApartmentDetailPage && !isAuthPage && <WhatsAppButton />}
     </>
   )
 }

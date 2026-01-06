@@ -41,9 +41,13 @@ function AdminPaymentDetail() {
     const trimmed = path.trim()
     if (!trimmed) return []
     if (trimmed.startsWith('data:')) return [trimmed]
-    if (trimmed.startsWith('http')) return [trimmed]
+    
+    // If already a full URL, ensure HTTPS
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return [trimmed.replace(/^http:\/\//i, 'https://')]
+    }
 
-    const base = getAssetBase()
+    const base = getAssetBase().replace(/^http:\/\//i, 'https://')
     const withoutLeadingSlash = trimmed.replace(/^\/+/, '')
 
     const candidates = []
@@ -65,7 +69,8 @@ function AdminPaymentDetail() {
       candidates.unshift(`${base}${trimmed}`)
     }
 
-    return Array.from(new Set(candidates))
+    // Ensure all candidates use HTTPS
+    return Array.from(new Set(candidates)).map(url => url.replace(/^http:\/\//i, 'https://'))
   }
 
   const normalizePayment = (raw) => {
@@ -245,10 +250,16 @@ function AdminPaymentDetail() {
                           alt={`Bukti pembayaran ${idx + 1}`}
                           className="img-fluid rounded"
                           style={{ maxHeight: '22.5rem', width: '100%', objectFit: 'contain' }}
+                          crossOrigin="anonymous"
+                          loading="lazy"
                           onError={(e) => {
                             const current = e.currentTarget.getAttribute('src')
                             const next = cands.find((u) => u !== current)
-                            if (next) e.currentTarget.setAttribute('src', next)
+                            if (next) {
+                              e.currentTarget.setAttribute('src', next)
+                            } else {
+                              console.error('Failed to load all image candidates:', cands)
+                            }
                           }}
                         />
                       </div>

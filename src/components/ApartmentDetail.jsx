@@ -146,14 +146,14 @@ function ApartmentDetail() {
   }
 
   return (
-    <div className="bg-white py-10">
+    <div className="bg-white py-10 pb-24 lg:pb-10">
       <Container className="px-3">
         <Row className="g-4">
           <Col lg={8}>
             <div className="overflow-hidden rounded-2xl shadow-sm mb-3" ref={carouselRef}>
-              <div className="d-flex justify-content-between align-items-center px-3 py-2 bg-white border border-slate-200 border-bottom-0 rounded-top-2">
+              <div className="d-flex justify-content-between align-items-start align-items-sm-center flex-column flex-sm-row gap-2 px-3 py-2 bg-white border border-slate-200 border-bottom-0 rounded-top-2">
                 <div className="fw-semibold text-slate-800">Galeri Unit</div>
-                <div className="d-flex gap-2">
+                <div className="d-flex flex-wrap gap-2">
                   <Button size="sm" variant="outline-secondary" className="rounded-pill" onClick={() => setShowLightbox(true)}>
                     Lihat Penuh
                   </Button>
@@ -187,7 +187,7 @@ function ApartmentDetail() {
                   className={`rounded-xl overflow-hidden border ${idx === selectedImage ? 'border-slate-900' : 'border-slate-200'}`}
                   onClick={() => setSelectedImage(idx)}
                 >
-                  <img src={thumb} alt={`Thumb ${idx + 1}`} className="h-16 w-24 object-cover" />
+                  <img src={thumb} alt={`Thumb ${idx + 1}`} className="h-14 w-20 object-cover sm:h-16 sm:w-24" />
                 </button>
               ))}
             </div>
@@ -298,7 +298,7 @@ function ApartmentDetail() {
           </Col>
 
           <Col lg={4}>
-            <div className="sticky top-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-8">
               <div className="mb-4">
                 <div className="text-sm font-semibold text-slate-500">{priceLabel}</div>
                 <div className="text-3xl font-bold text-slate-900">

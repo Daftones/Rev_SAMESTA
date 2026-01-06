@@ -86,7 +86,7 @@ export default function MonthlyPromo() {
                         />
                         <Badge 
                           bg="danger" 
-                          className="position-absolute top-0 end-0 m-3 fs-5 px-3 py-2 rounded-full"
+                          className="position-absolute top-0 end-0 m-3 fs-6 fs-sm-5 px-3 py-2 rounded-full"
                         >
                           {promo.discount}
                         </Badge>

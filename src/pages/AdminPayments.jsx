@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Container, Table, Badge, Button, Modal, Card, Row, Col, Form, Alert, Spinner } from 'react-bootstrap'
-import { paymentsAPI, inquiriesAPI } from '../services/api'
+import { paymentsAPI, inquiriesAPI, unitsAPI, unitTypesAPI } from '../services/api'
+import jsPDF from 'jspdf'
+import 'jspdf-autotable'
+import * as XLSX from 'xlsx'
 
 function AdminPayments() {
   const [payments, setPayments] = useState([])
   const [inquiriesMap, setInquiriesMap] = useState({})
+  const [unitsMap, setUnitsMap] = useState({})
+  const [unitTypesMap, setUnitTypesMap] = useState({})
   const [selectedPayment, setSelectedPayment] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [filters, setFilters] = useState({ status: 'all', method: 'all', from: '', to: '' })
@@ -13,6 +18,7 @@ function AdminPayments() {
   const [updatingId, setUpdatingId] = useState('')
   const [lastSync, setLastSync] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [imageErrors, setImageErrors] = useState(new Set())
 
   const statusMeta = {
     pending: { text: 'Pending', variant: 'warning' },
@@ -34,10 +40,30 @@ function AdminPayments() {
   }
 
   const resolveFileUrl = (path) => {
-    if (!path || typeof path !== 'string') return path
-    if (path.startsWith('http')) return path
-    const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/?api\/?$/, '')
-    return `${base}/${path.replace(/^\//, '')}`
+    if (!path || typeof path !== 'string') {
+      console.warn('[resolveFileUrl] Invalid path:', path)
+      return null
+    }
+    
+    // If already a full URL, ensure it uses HTTPS to prevent mixed content issues
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      const resolved = path.replace(/^http:\/\//i, 'https://')
+      console.log('[resolveFileUrl] Full URL resolved:', resolved)
+      return resolved
+    }
+    
+    // Get base URL and ensure it uses HTTPS
+    const base = (import.meta.env.VITE_API_BASE_URL || '')
+      .replace(/\/?api\/?$/, '')
+      .replace(/^http:\/\//i, 'https://')
+    
+    // Clean up path and construct full URL
+    const cleanPath = path.replace(/^\//, '')
+    const fullUrl = `${base}/${cleanPath}`
+    const resolved = fullUrl.replace(/^http:\/\//i, 'https://')
+    
+    console.log('[resolveFileUrl] Resolved:', { original: path, base, cleanPath, resolved })
+    return resolved
   }
 
   const normalizeInquiry = (raw) => {
@@ -46,11 +72,69 @@ function AdminPayments() {
       id: raw.id || raw.inquiry_id || raw.uuid || raw._id,
       userId: raw.user_id || raw.userId || raw.user_identifier,
       unitId: raw.unit_id || raw.unitId,
+      unitTypeId: raw.unit_type_id || raw.unitTypeId || raw.unit_type || raw.unitType,
       purchaseType: raw.purchase_type || raw.purchaseType || 'rent',
       status: (raw.status || 'sent').toLowerCase(),
       address: raw.address || '',
       createdAt: raw.created_at || raw.createdAt,
     }
+  }
+
+  const pickUnitId = (u) => String(u?.id ?? u?.unit_id ?? u?.unitId ?? u?.uuid ?? '').trim()
+  const pickUnitTypeId = (u) => String(u?.unit_type_id ?? u?.unitTypeId ?? u?.unit_type ?? u?.unitType ?? u?.type_id ?? '').trim()
+
+  const normalizeUnit = (raw) => {
+    if (!raw) return null
+    const id = pickUnitId(raw)
+    if (!id) return null
+    return {
+      id,
+      unitTypeId: pickUnitTypeId(raw),
+    }
+  }
+
+  const pickUnitTypeKey = (u) => String(u?.unit_type_id ?? u?.id ?? u?.unitTypeId ?? u?.uuid ?? '').trim()
+  const normalizeUnitType = (raw) => {
+    if (!raw) return null
+    const id = pickUnitTypeKey(raw)
+    if (!id) return null
+    const rent = Number(raw?.rent_price ?? raw?.rentPrice ?? raw?.rent)
+    const sale = Number(raw?.sale_price ?? raw?.salePrice ?? raw?.sale)
+    return {
+      id,
+      rentPrice: Number.isFinite(rent) ? rent : null,
+      salePrice: Number.isFinite(sale) ? sale : null,
+    }
+  }
+
+  const getInquiryUnitTypeId = (inquiry) => {
+    if (!inquiry) return ''
+    const fromInquiry = String(inquiry.unitTypeId ?? '').trim()
+    if (fromInquiry) return fromInquiry
+
+    const unitId = String(inquiry.unitId ?? '').trim()
+    if (!unitId) return ''
+    const unit = unitsMap[unitId]
+    return String(unit?.unitTypeId ?? '').trim()
+  }
+
+  const getAmountFromUnitSelection = (payment) => {
+    if (!payment) return null
+    const inquiry = inquiriesMap[payment.inquiryId]
+    const unitTypeId = getInquiryUnitTypeId(inquiry)
+    if (!unitTypeId) return null
+    const unitType = unitTypesMap[unitTypeId]
+    if (!unitType) return null
+
+    const isRent = String(inquiry?.purchaseType || '').toLowerCase() === 'rent'
+    const value = isRent ? unitType?.rentPrice : unitType?.salePrice
+    return Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : null
+  }
+
+  const getEffectiveAmount = (payment) => {
+    const derived = getAmountFromUnitSelection(payment)
+    if (derived !== null) return derived
+    return Number.isFinite(Number(payment?.amount)) ? Number(payment.amount) : 0
   }
 
   const normalizePayment = (raw) => {
@@ -86,9 +170,11 @@ function AdminPayments() {
     setRefreshing(true)
     setError('')
     try {
-      const [paymentsRes, inquiriesRes] = await Promise.all([
+      const [paymentsRes, inquiriesRes, unitsRes, unitTypesRes] = await Promise.all([
         paymentsAPI.getAll(),
         inquiriesAPI.getAll(),
+        unitsAPI.getAll(),
+        unitTypesAPI.getAll(),
       ])
 
       const paymentList = Array.isArray(paymentsRes?.data) ? paymentsRes.data : Array.isArray(paymentsRes) ? paymentsRes : []
@@ -103,6 +189,21 @@ function AdminPayments() {
         if (normalized?.id) mappedInquiry[normalized.id] = normalized
       })
       setInquiriesMap(mappedInquiry)
+
+      const unitsList = Array.isArray(unitsRes?.data) ? unitsRes.data : Array.isArray(unitsRes) ? unitsRes : []
+      const mappedUnits = {}
+      unitsList.map(normalizeUnit).filter(Boolean).forEach((u) => {
+        mappedUnits[u.id] = u
+      })
+      setUnitsMap(mappedUnits)
+
+      const unitTypesList = Array.isArray(unitTypesRes?.data) ? unitTypesRes.data : Array.isArray(unitTypesRes) ? unitTypesRes : []
+      const mappedUnitTypes = {}
+      unitTypesList.map(normalizeUnitType).filter(Boolean).forEach((u) => {
+        mappedUnitTypes[u.id] = u
+      })
+      setUnitTypesMap(mappedUnitTypes)
+
       setLastSync(new Date())
     } catch (err) {
       console.error('Failed to load payments', err)
@@ -151,6 +252,13 @@ function AdminPayments() {
     }
   }
 
+  const handleImageError = (e, src) => {
+    console.error('[handleImageError] Failed to load image:', src)
+    console.error('[handleImageError] Base URL:', import.meta.env.VITE_API_BASE_URL)
+    console.error('[handleImageError] Image element:', e.target)
+    setImageErrors(prev => new Set(prev).add(src))
+  }
+
   const handleViewDetails = (payment) => {
     setSelectedPayment(payment)
     setShowModal(true)
@@ -164,6 +272,116 @@ function AdminPayments() {
   const getStatusBadge = (status) => {
     const meta = statusMeta[status] || { text: status || 'Unknown', variant: 'secondary' }
     return <Badge bg={meta.variant}>{meta.text}</Badge>
+  }
+
+  const getStatusText = (status) => {
+    const meta = statusMeta[status] || { text: status || 'Unknown', variant: 'secondary' }
+    return meta.text
+  }
+
+  const exportToPDF = () => {
+    const doc = new jsPDF()
+    
+    // Add title
+    doc.setFontSize(18)
+    doc.text('Laporan Pembayaran', 14, 20)
+    
+    // Add export date
+    doc.setFontSize(10)
+    doc.text(`Diekspor: ${formatDate(new Date())}`, 14, 28)
+    
+    // Add filter info if any active filters
+    let yPos = 35
+    if (filters.status !== 'all' || filters.method !== 'all' || filters.from || filters.to) {
+      doc.setFontSize(9)
+      let filterText = 'Filter: '
+      if (filters.status !== 'all') filterText += `Status: ${getStatusText(filters.status)} | `
+      if (filters.method !== 'all') filterText += `Metode: ${filters.method} | `
+      if (filters.from) filterText += `Dari: ${filters.from} | `
+      if (filters.to) filterText += `Sampai: ${filters.to}`
+      doc.text(filterText, 14, yPos)
+      yPos += 7
+    }
+    
+    // Prepare table data
+    const tableData = filteredPayments.map((payment, index) => {
+      const inquiry = inquiriesMap[payment.inquiryId]
+      return [
+        index + 1,
+        payment.reference || payment.id,
+        payment.inquiryId || '-',
+        inquiry?.userId || payment.userId || '-',
+        formatCurrency(getEffectiveAmount(payment)),
+        getStatusText(payment.status),
+        payment.method || '-',
+        formatDate(payment.dueDate)
+      ]
+    })
+    
+    // Add table
+    doc.autoTable({
+      startY: yPos,
+      head: [['#', 'Invoice', 'Inquiry', 'User', 'Jumlah', 'Status', 'Metode', 'Jatuh Tempo']],
+      body: tableData,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [15, 23, 42] }
+    })
+    
+    // Add summary
+    const finalY = doc.lastAutoTable.finalY || yPos + 10
+    doc.setFontSize(10)
+    doc.text(`Total Pembayaran: ${filteredPayments.length}`, 14, finalY + 10)
+    
+    const totalAmount = filteredPayments.reduce((sum, p) => sum + getEffectiveAmount(p), 0)
+    doc.text(`Total Nilai: ${formatCurrency(totalAmount)}`, 14, finalY + 17)
+    
+    // Save PDF
+    const fileName = `pembayaran_${new Date().toISOString().split('T')[0]}.pdf`
+    doc.save(fileName)
+  }
+
+  const exportToExcel = () => {
+    // Prepare data for Excel
+    const excelData = filteredPayments.map((payment, index) => {
+      const inquiry = inquiriesMap[payment.inquiryId]
+      return {
+        'No': index + 1,
+        'Invoice': payment.reference || payment.id,
+        'Inquiry ID': payment.inquiryId || '-',
+        'User ID': inquiry?.userId || payment.userId || '-',
+        'Jumlah': getEffectiveAmount(payment),
+        'Status': getStatusText(payment.status),
+        'Metode': payment.method || '-',
+        'Jatuh Tempo': payment.dueDate ? new Date(payment.dueDate).toLocaleString('id-ID') : '-',
+        'Dibayar': payment.paidAt ? new Date(payment.paidAt).toLocaleString('id-ID') : '-',
+        'Dibuat': payment.createdAt ? new Date(payment.createdAt).toLocaleString('id-ID') : '-'
+      }
+    })
+    
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(excelData)
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 5 },  // No
+      { wch: 20 }, // Invoice
+      { wch: 25 }, // Inquiry ID
+      { wch: 25 }, // User ID
+      { wch: 15 }, // Jumlah
+      { wch: 20 }, // Status
+      { wch: 15 }, // Metode
+      { wch: 20 }, // Jatuh Tempo
+      { wch: 20 }, // Dibayar
+      { wch: 20 }  // Dibuat
+    ]
+    
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Pembayaran')
+    
+    // Save Excel file
+    const fileName = `pembayaran_${new Date().toISOString().split('T')[0]}.xlsx`
+    XLSX.writeFile(wb, fileName)
   }
 
   return (
@@ -181,6 +399,12 @@ function AdminPayments() {
         </div>
         <div className="d-flex flex-wrap gap-2 align-items-center">
           {lastSync && <span className="text-muted small">Sinkron: {formatDate(lastSync)}</span>}
+          <Button variant="outline-success" size="sm" onClick={exportToExcel} disabled={loading || filteredPayments.length === 0}>
+            Export Excel
+          </Button>
+          <Button variant="outline-danger" size="sm" onClick={exportToPDF} disabled={loading || filteredPayments.length === 0}>
+            Export PDF
+          </Button>
           <Button variant="outline-primary" size="sm" onClick={() => loadData(false)} disabled={refreshing}>
             {refreshing ? 'Menyinkronkan...' : 'Sinkronkan sekarang'}
           </Button>
@@ -256,7 +480,7 @@ function AdminPayments() {
                     <td className="fw-semibold">{payment.reference || payment.id}</td>
                     <td>{payment.inquiryId || '-'}</td>
                     <td>{inquiry?.userId || payment.userId || '-'}</td>
-                    <td>{formatCurrency(payment.amount)}</td>
+                    <td>{formatCurrency(getEffectiveAmount(payment))}</td>
                     <td>{getStatusBadge(payment.status)}</td>
                     <td>{formatDate(payment.dueDate)}</td>
                     <td>
@@ -296,7 +520,7 @@ function AdminPayments() {
                   <Row className="gy-2">
                     <Col md={6}><strong>Invoice:</strong> {selectedPayment.reference || selectedPayment.id}</Col>
                     <Col md={6}><strong>Status:</strong> {getStatusBadge(selectedPayment.status)}</Col>
-                    <Col md={6}><strong>Jumlah:</strong> {formatCurrency(selectedPayment.amount)}</Col>
+                    <Col md={6}><strong>Jumlah:</strong> {formatCurrency(getEffectiveAmount(selectedPayment))}</Col>
                     <Col md={6}><strong>Metode:</strong> {selectedPayment.method}</Col>
                     <Col md={6}><strong>Jatuh Tempo:</strong> {formatDate(selectedPayment.dueDate)}</Col>
                     <Col md={6}><strong>Dibayar:</strong> {formatDate(selectedPayment.paidAt)}</Col>

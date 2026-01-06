@@ -134,6 +134,29 @@ const unitTypesAPI = {
   },
 };
 
+const stripClientPricingFields = (payload) => {
+  if (!payload || typeof payload !== 'object') return payload
+  // Defense-in-depth: price/amount must be derived server-side from the selected unit/inquiry.
+  // Never trust client-supplied pricing.
+  const forbiddenKeys = new Set([
+    'price',
+    'harga',
+    'amount',
+    'total',
+    'total_amount',
+    'rent_price',
+    'sale_price',
+    'unit_price',
+    'payment_amount',
+  ])
+
+  const next = { ...payload }
+  forbiddenKeys.forEach((k) => {
+    if (k in next) delete next[k]
+  })
+  return next
+}
+
 const inquiriesAPI = {
   async getAll(params = {}) {
     const { data } = await api.get("/inquiry", { params });
@@ -146,9 +169,10 @@ const inquiriesAPI = {
   },
 
   async create(payload) {
+    const safePayload = stripClientPricingFields(payload)
     const formData = new FormData();
 
-    Object.entries(payload || {}).forEach(([key, value]) => {
+    Object.entries(safePayload || {}).forEach(([key, value]) => {
       if (value === undefined || value === null || value === "") return;
 
       // Allow array-style fields (e.g., identity_card[])
@@ -201,6 +225,7 @@ const paymentsAPI = {
   },
 
   async create(payload) {
+    const safePayload = stripClientPricingFields(payload)
     // Backend requires multipart proof upload on create in some implementations.
     // Support both JSON payloads and FormData payloads.
     if (payload instanceof FormData) {
@@ -208,7 +233,7 @@ const paymentsAPI = {
       return data;
     }
 
-    const proof = payload?.proof
+    const proof = safePayload?.proof
     const isFile = (v) => typeof File !== 'undefined' && v instanceof File
     const proofIsArray = Array.isArray(proof)
     const proofHasFiles = proofIsArray ? proof.some(isFile) : isFile(proof)
@@ -216,7 +241,7 @@ const paymentsAPI = {
     if (proofHasFiles) {
       const formData = new FormData();
 
-      Object.entries(payload || {}).forEach(([key, value]) => {
+      Object.entries(safePayload || {}).forEach(([key, value]) => {
         if (value === undefined || value === null || value === "") return;
 
         if (key === 'proof') {
@@ -236,7 +261,7 @@ const paymentsAPI = {
       return data;
     }
 
-    const { data } = await api.post("/payment", payload);
+    const { data } = await api.post("/payment", safePayload);
     return data;
   },
 

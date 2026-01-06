@@ -44,9 +44,22 @@ function Payments() {
 
   const resolveFileUrl = (path) => {
     if (!path || typeof path !== 'string') return path
-    if (path.startsWith('http')) return path
-    const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/?api\/?$/, '')
-    return `${base}/${path.replace(/^\//, '')}`
+    
+    // If already a full URL, ensure it uses HTTPS to prevent mixed content issues
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path.replace(/^http:\/\//i, 'https://')
+    }
+    
+    // Get base URL and ensure it uses HTTPS
+    const base = (import.meta.env.VITE_API_BASE_URL || '')
+      .replace(/\/?api\/?$/, '')
+      .replace(/^http:\/\//i, 'https://')
+    
+    // Clean up path and construct full URL
+    const cleanPath = path.replace(/^\//, '')
+    const fullUrl = `${base}/${cleanPath}`
+    
+    return fullUrl.replace(/^http:\/\//i, 'https://')
   }
 
   const normalizeInquiry = (raw) => {

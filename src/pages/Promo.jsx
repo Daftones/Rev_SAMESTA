@@ -87,7 +87,7 @@ function Promo() {
                     <div className="flex h-64 w-full items-center justify-center bg-slate-100 text-5xl">🏢</div>
                     <Badge 
                       bg="danger" 
-                      className="position-absolute top-0 end-0 m-3 fs-4 px-4 py-2 rounded-full"
+                      className="position-absolute top-0 end-0 m-3 fs-6 fs-sm-5 fs-lg-4 px-3 px-sm-4 py-2 rounded-full"
                     >
                       {promo.discount}
                     </Badge>
@@ -149,7 +149,7 @@ function Promo() {
           {selectedPromo && (
             <>
               <div className="text-center mb-4">
-                <Badge bg="danger" className="fs-3 px-4 py-3">
+                <Badge bg="danger" className="fs-5 fs-md-3 px-3 px-sm-4 py-3">
                   {selectedPromo.discount}
                 </Badge>
               </div>

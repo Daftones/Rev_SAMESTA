@@ -10,16 +10,37 @@ function AdminInquiries() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [updatingId, setUpdatingId] = useState('')
+  const [imageErrors, setImageErrors] = useState(new Set())
 
   useEffect(() => {
     loadInquiries()
   }, [])
 
   const resolveImageUrl = (path) => {
-    if (!path || typeof path !== 'string') return path
-    if (path.startsWith('http')) return path
-    const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/?api\/?$/, '')
-    return `${base}/${path.replace(/^\//, '')}`
+    if (!path || typeof path !== 'string') {
+      console.warn('[resolveImageUrl] Invalid path:', path)
+      return null
+    }
+    
+    // If already a full URL, ensure it uses HTTPS to prevent mixed content issues
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      const resolved = path.replace(/^http:\/\//i, 'https://')
+      console.log('[resolveImageUrl] Full URL resolved:', resolved)
+      return resolved
+    }
+    
+    // Get base URL and ensure it uses HTTPS
+    const base = (import.meta.env.VITE_API_BASE_URL || '')
+      .replace(/\/?api\/?$/, '')
+      .replace(/^http:\/\//i, 'https://')
+    
+    // Clean up path and construct full URL
+    const cleanPath = path.replace(/^\//, '')
+    const fullUrl = `${base}/${cleanPath}`
+    const resolved = fullUrl.replace(/^http:\/\//i, 'https://')
+    
+    console.log('[resolveImageUrl] Resolved:', { original: path, base, cleanPath, resolved })
+    return resolved
   }
 
   const normalizeStatus = (raw) => {
@@ -59,6 +80,19 @@ function AdminInquiries() {
     const idCardPhotos = identityCardList
       .filter(Boolean)
       .map((p) => resolveImageUrl(p))
+      .filter(Boolean) // Remove null/undefined results
+
+    const singlePhoto = resolveImageUrl(
+      raw.id_card_photo_url || raw.id_card_photo || raw.idCardPhoto
+    )
+
+    console.log('[normalizeInquiry] Processing:', {
+      id: raw.id,
+      raw_identity_card: identityCard,
+      raw_single: raw.id_card_photo_url || raw.id_card_photo || raw.idCardPhoto,
+      resolved_photos: idCardPhotos,
+      resolved_single: singlePhoto
+    })
 
     return {
       id: raw.id || raw.inquiry_id || raw.uuid || raw._id,
@@ -69,21 +103,39 @@ function AdminInquiries() {
       address: raw.address || '',
       createdAt: raw.created_at || raw.createdAt || new Date().toISOString(),
       idCardPhotos,
-      idCardPhoto: idCardPhotos[0] || resolveImageUrl(raw.id_card_photo_url || raw.id_card_photo || raw.idCardPhoto),
+      idCardPhoto: idCardPhotos[0] || singlePhoto,
       timeline: Array.isArray(raw.timeline) ? raw.timeline : [],
     }
+  }
+
+  const handleImageError = (e, src) => {
+    console.error('[handleImageError] Failed to load image:', src)
+    console.error('[handleImageError] Image element:', e.target)
+    console.error('[handleImageError] Base URL:', import.meta.env.VITE_API_BASE_URL)
+    setImageErrors(prev => new Set(prev).add(src))
+    // Don't hide image, show broken image icon instead for better UX
   }
 
   const loadInquiries = async () => {
     setLoading(true)
     setError('')
+    setImageErrors(new Set())
     try {
       const response = await inquiriesAPI.getAll()
+      console.log('[loadInquiries] Raw response:', response)
       const list = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : []
+      console.log('[loadInquiries] List count:', list.length)
+      if (list.length > 0) {
+        console.log('[loadInquiries] Sample raw inquiry:', list[0])
+      }
       const normalized = list
         .map(normalizeInquiry)
         .filter(Boolean)
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      console.log('[loadInquiries] Normalized count:', normalized.length)
+      if (normalized.length > 0) {
+        console.log('[loadInquiries] Sample normalized inquiry:', normalized[0])
+      }
       setInquiries(normalized)
     } catch (err) {
       console.error('Gagal memuat inquiry', err)
@@ -348,22 +400,65 @@ function AdminInquiries() {
                   {Array.isArray(selectedInquiry.idCardPhotos) && selectedInquiry.idCardPhotos.length > 0 ? (
                     <div className="d-flex flex-column gap-2">
                       {selectedInquiry.idCardPhotos.map((src, idx) => (
-                        <img
-                          key={idx}
-                          src={src}
-                          alt={`KTP ${idx + 1}`}
-                          className="img-fluid rounded shadow"
-                          style={{ maxHeight: '16.25rem', width: '100%', objectFit: 'contain' }}
-                        />
+                        src ? (
+                          <div key={idx} className="position-relative">
+                            <img
+                              src={src}
+                              alt={`KTP ${idx + 1}`}
+                              className="img-fluid rounded shadow"
+                              style={{ maxHeight: '16.25rem', width: '100%', objectFit: 'contain' }}
+                              crossOrigin="anonymous"
+                              onError={(e) => handleImageError(e, src)}
+                              loading="lazy"
+                            />
+                            {imageErrors.has(src) && (
+                              <div className="alert alert-danger mt-2 mb-0">
+                                <div className="fw-bold">⚠️ Gagal memuat gambar</div>
+                                <small className="text-break">
+                                  <strong>URL:</strong> {src || '(URL kosong)'}<br/>
+                                  <strong>Base API:</strong> {import.meta.env.VITE_API_BASE_URL}<br/>
+                                  <div className="mt-1">
+                                    <a href={src} target="_blank" rel="noreferrer" className="text-decoration-underline">
+                                      Coba buka di tab baru
+                                    </a>
+                                  </div>
+                                </small>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div key={idx} className="alert alert-warning mb-0">
+                            <small>⚠️ URL gambar kosong untuk foto {idx + 1}</small>
+                          </div>
+                        )
                       ))}
                     </div>
                   ) : selectedInquiry.idCardPhoto ? (
-                    <img
-                      src={selectedInquiry.idCardPhoto}
-                      alt="KTP"
-                      className="img-fluid rounded shadow"
-                      style={{ maxHeight: '16.25rem', width: '100%', objectFit: 'contain' }}
-                    />
+                    <div className="position-relative">
+                      <img
+                        src={selectedInquiry.idCardPhoto}
+                        alt="KTP"
+                        className="img-fluid rounded shadow"
+                        style={{ maxHeight: '16.25rem', width: '100%', objectFit: 'contain' }}
+                        crossOrigin="anonymous"
+                        onError={(e) => handleImageError(e, selectedInquiry.idCardPhoto)}
+                        loading="lazy"
+                      />
+                      {imageErrors.has(selectedInquiry.idCardPhoto) && (
+                        <div className="alert alert-danger mt-2 mb-0">
+                          <div className="fw-bold">⚠️ Gagal memuat gambar</div>
+                          <small className="text-break">
+                            <strong>URL:</strong> {selectedInquiry.idCardPhoto || '(URL kosong)'}<br/>
+                            <strong>Base API:</strong> {import.meta.env.VITE_API_BASE_URL}<br/>
+                            <div className="mt-1">
+                              <a href={selectedInquiry.idCardPhoto} target="_blank" rel="noreferrer" className="text-decoration-underline">
+                                Coba buka di tab baru
+                              </a>
+                            </div>
+                          </small>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <p className="text-muted">Tidak ada foto</p>
                   )}

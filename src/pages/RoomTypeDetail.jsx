@@ -214,7 +214,7 @@ function RoomTypeDetail() {
             <Col lg={4}>
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-xl font-semibold text-slate-900">Informasi Harga</h3>
-                <div className="mt-2 text-2xl font-bold text-slate-900">
+                <div className="mt-2 text-xl md:text-2xl font-bold text-slate-900 break-words">
                   {parsedRoom.rentRange || parsedRoom.saleRange ? (
                     <>
                       {parsedRoom.rentRange && (

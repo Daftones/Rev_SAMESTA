@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Container, Row, Col, Card, Badge, Button, Modal } from 'react-bootstrap'
 import { useNavigate } from 'react-router-dom'
-import Navbar from '../components/Navbar'
 
 function Promo() {
   const navigate = useNavigate()
@@ -71,7 +70,6 @@ function Promo() {
 
   return (
     <>
-      <Navbar />
       <div className="bg-white py-10">
         <Container className="px-3">
           <div className="text-center mb-10">

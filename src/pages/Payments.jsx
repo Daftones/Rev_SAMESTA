@@ -1,19 +1,27 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Container, Card, Badge, Button, Row, Col, Alert, Spinner, OverlayTrigger, Tooltip, Form } from 'react-bootstrap'
-import Navbar from '../components/Navbar'
-import { paymentsAPI, inquiriesAPI } from '../services/api'
+import { Alert, Button, Card, Col, Container, Form, Row, Spinner } from 'react-bootstrap'
+import { inquiriesAPI, paymentsAPI, unitTypesAPI } from '../services/api'
+import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
 
 function Payments() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [payments, setPayments] = useState([])
-  const [inquiriesMap, setInquiriesMap] = useState({})
+
   const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
-  const [refreshing, setRefreshing] = useState(false)
+  const [message, setMessage] = useState('')
+
   const [currentUserId, setCurrentUserId] = useState('')
-  const [lastSync, setLastSync] = useState(null)
+  const [inquiries, setInquiries] = useState([])
+  const [unitTypeNameMap, setUnitTypeNameMap] = useState({})
+  const [unitNumberMap, setUnitNumberMap] = useState({})
+
+  const [form, setForm] = useState({
+    inquiryId: '',
+    proofFile: null,
+  })
 
   const sameId = (a, b) => String(a ?? '') === String(b ?? '')
 
@@ -22,74 +30,19 @@ function Payments() {
     return String(params.get('inquiry_id') || params.get('inquiryId') || '').trim()
   }, [location.search])
 
-  const [createForm, setCreateForm] = useState({
-    inquiryId: '',
-    proofFile: null,
-  })
-  const [creating, setCreating] = useState(false)
-  const [createMessage, setCreateMessage] = useState('')
-
-  const statusMeta = {
-    pending: { label: 'Pending', variant: 'warning' },
-    paid: { label: 'Paid', variant: 'success' },
-    success: { label: 'Paid', variant: 'success' },
-    settled: { label: 'Paid', variant: 'success' },
-    awaiting: { label: 'Awaiting', variant: 'info' },
-    awaiting_payment: { label: 'Awaiting', variant: 'info' },
-    failed: { label: 'Failed', variant: 'danger' },
-    cancelled: { label: 'Cancelled', variant: 'secondary' },
-    expired: { label: 'Expired', variant: 'secondary' },
-    refunded: { label: 'Refunded', variant: 'info' },
-  }
-
-  const resolveFileUrl = (path) => {
-    if (!path || typeof path !== 'string') return path
-    
-    // If already a full URL, ensure it uses HTTPS to prevent mixed content issues
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      return path.replace(/^http:\/\//i, 'https://')
-    }
-    
-    // Get base URL and ensure it uses HTTPS
-    const base = (import.meta.env.VITE_API_BASE_URL || '')
-      .replace(/\/?api\/?$/, '')
-      .replace(/^http:\/\//i, 'https://')
-    
-    // Clean up path and construct full URL
-    const cleanPath = path.replace(/^\//, '')
-    const fullUrl = `${base}/${cleanPath}`
-    
-    return fullUrl.replace(/^http:\/\//i, 'https://')
-  }
-
   const normalizeInquiry = (raw) => {
     if (!raw) return null
+    const totalPriceRaw = raw.total_price ?? raw.totalPrice ?? raw.amount ?? raw.total ?? raw.total_amount
+    const totalPrice = Number(totalPriceRaw)
     return {
       id: raw.id || raw.inquiry_id || raw.uuid || raw._id,
       userId: raw.user_id || raw.userId || raw.user_identifier,
       unitId: raw.unit_id || raw.unitId,
+      unitTypeId: raw.unit_type_id || raw.unitTypeId || raw.unit_type || raw.unitType || '',
       purchaseType: raw.purchase_type || raw.purchaseType || 'rent',
       status: (raw.status || 'sent').toLowerCase(),
       createdAt: raw.created_at || raw.createdAt,
-    }
-  }
-
-  const normalizePayment = (raw) => {
-    if (!raw) return null
-    return {
-      id: raw.id || raw.payment_id || raw.uuid || raw._id,
-      inquiryId: raw.inquiry_id || raw.inquiryId || raw.inquiry_uuid,
-      userId: raw.user_id || raw.userId || raw.customer_id,
-      amount: Number(raw.amount ?? raw.total ?? raw.total_amount ?? 0),
-      method: raw.method || raw.payment_method || 'Manual',
-      status: (raw.status || 'pending').toLowerCase(),
-      dueDate: raw.due_date || raw.dueDate,
-      paidAt: raw.paid_at || raw.paidAt,
-      reference: raw.reference || raw.reference_no || raw.invoice_no,
-      invoiceUrl: resolveFileUrl(raw.invoice_url || raw.invoiceUrl || raw.invoice),
-      proofUrl: resolveFileUrl(raw.proof_url || raw.proofUrl || raw.proof),
-      createdAt: raw.created_at || raw.createdAt,
-      updatedAt: raw.updated_at || raw.updatedAt,
+      totalPrice: Number.isFinite(totalPrice) ? totalPrice : null,
     }
   }
 
@@ -101,66 +54,12 @@ function Payments() {
     }).format(Number.isNaN(value) ? 0 : value)
   }
 
-  const formatDate = (value) => {
-    if (!value) return '-'
-    return new Date(value).toLocaleString('id-ID', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })
-  }
-
-  const fetchInquiries = async (uid) => {
-    try {
-      const res = await inquiriesAPI.getAll(uid ? { user_id: uid } : {})
-      const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
-      const mapped = {}
-      list
-        .map(normalizeInquiry)
-        .filter(Boolean)
-        // Defense-in-depth: if backend returns mixed inquiries, only keep the logged-in user's.
-        .filter((inq) => (!uid ? true : sameId(inq.userId, uid)))
-        .forEach((normalized) => {
-          if (normalized?.id) mapped[normalized.id] = normalized
-        })
-      setInquiriesMap(mapped)
-
-      // If Payments page is opened from Inquiry flow, preselect that inquiry
-      setCreateForm((prev) => {
-        if (prev.inquiryId) return prev
-        if (initialInquiryId && mapped[initialInquiryId]) return { ...prev, inquiryId: String(initialInquiryId) }
-        if (initialInquiryId) return { ...prev, inquiryId: String(initialInquiryId) }
-        return prev
-      })
-    } catch (err) {
-      console.error('Failed to load inquiries for payments', err)
-    }
-  }
-
-  const fetchPayments = async (uid, withLoader = false) => {
-    if (withLoader) setLoading(true)
-    setRefreshing(true)
-    setError('')
-    try {
-      const res = await paymentsAPI.getAll(uid ? { user_id: uid } : {})
-      const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
-      const normalized = list.map(normalizePayment).filter(Boolean)
-      normalized.sort((a, b) => new Date(b.dueDate || b.createdAt || 0) - new Date(a.dueDate || a.createdAt || 0))
-      setPayments(normalized)
-      setLastSync(new Date())
-    } catch (err) {
-      console.error('Failed to load payments', err)
-      setError('Gagal memuat data pembayaran dari server. Coba lagi.')
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }
-
   useEffect(() => {
     const token = localStorage.getItem('authToken')
     const storedUser = localStorage.getItem('user')
 
     if (!token || !storedUser) {
+      if (sessionStorage.getItem('logoutFeedbackPending') === '1') return
       sessionStorage.setItem('redirectAfterLogin', '/payments')
       navigate('/login', { replace: true })
       return
@@ -179,49 +78,81 @@ function Payments() {
   useEffect(() => {
     if (!currentUserId) return
 
-    const loadData = async () => {
-      await Promise.all([fetchInquiries(currentUserId), fetchPayments(currentUserId, true)])
+    const load = async () => {
+      setLoading(true)
+      setError('')
+      try {
+        const [inquiriesRes, unitTypesRes] = await Promise.all([
+          inquiriesAPI.getAll({ user_id: currentUserId }),
+          unitTypesAPI.getAll(),
+        ])
+
+        const inqList = Array.isArray(inquiriesRes?.data) ? inquiriesRes.data : Array.isArray(inquiriesRes) ? inquiriesRes : []
+        const normalizedInquiries = inqList
+          .map(normalizeInquiry)
+          .filter(Boolean)
+          .filter((inq) => (!currentUserId ? true : sameId(inq.userId, currentUserId)))
+          .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+        setInquiries(normalizedInquiries)
+
+        const unitTypeList = Array.isArray(unitTypesRes?.data) ? unitTypesRes.data : Array.isArray(unitTypesRes) ? unitTypesRes : []
+        const nameMap = {}
+        unitTypeList.forEach((ut) => {
+          const id = String(ut?.unit_type_id ?? ut?.id ?? ut?.uuid ?? '').trim()
+          if (!id) return
+          nameMap[id] = String(ut?.name || ut?.unit_name || ut?.title || '').trim()
+        })
+        setUnitTypeNameMap(nameMap)
+
+        const computedUnitNumberMap = buildUnitNumberMap(unitTypeList, {
+          getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
+          getFloor: (x) => x?.floor,
+          getName: (x) => x?.name,
+        })
+        setUnitNumberMap(computedUnitNumberMap)
+
+        if (initialInquiryId) {
+          setForm((prev) => (prev.inquiryId ? prev : { ...prev, inquiryId: initialInquiryId }))
+        }
+      } catch (err) {
+        console.error('Failed to load inquiries for payment', err)
+        setError('Gagal memuat data inquiry. Coba lagi.')
+      } finally {
+        setLoading(false)
+      }
     }
 
-    loadData()
-    const interval = setInterval(() => fetchPayments(currentUserId), 10000)
-    return () => clearInterval(interval)
-  }, [currentUserId])
+    load()
+  }, [currentUserId, initialInquiryId])
 
-  useEffect(() => {
-    if (!initialInquiryId) return
-    setCreateForm((prev) => ({ ...prev, inquiryId: String(initialInquiryId) }))
-  }, [initialInquiryId])
+  const selectedInquiry = useMemo(() => {
+    const id = String(form.inquiryId || '').trim()
+    if (!id) return null
+    return inquiries.find((inq) => String(inq.id) === id) || null
+  }, [form.inquiryId, inquiries])
 
-  const paymentsView = useMemo(() => {
-    if (!currentUserId) return payments
+  const selectedInquiryUnitLabel = useMemo(() => {
+    if (!selectedInquiry) return '-'
+    const unitTypeId = String(selectedInquiry.unitTypeId || '').trim()
+    const unitNumber = unitNumberMap[unitTypeId]
+    if (unitNumber) return `Unit ${formatUnitNumber(unitNumber)}`
 
-    // Safety filter (defense-in-depth): even if backend returns unscoped payments,
-    // only display data owned by the logged-in user.
-    return payments.filter((p) => {
-      if (!p) return false
+    const unitTypeName = unitTypeNameMap[unitTypeId] || ''
+    return unitTypeName || '-'
+  }, [selectedInquiry, unitNumberMap, unitTypeNameMap])
 
-      // Prefer direct ownership field from payments payload.
-      if (p.userId !== undefined && p.userId !== null && String(p.userId).trim() !== '') {
-        return sameId(p.userId, currentUserId)
-      }
+  const inquiryAmount = useMemo(() => {
+    if (!selectedInquiry) return null
+    return Number.isFinite(Number(selectedInquiry.totalPrice)) ? Number(selectedInquiry.totalPrice) : null
+  }, [selectedInquiry])
 
-      // Fallback: infer ownership via inquiry relationship (if present in the UI map).
-      const inquiry = inquiriesMap[p.inquiryId]
-      if (inquiry?.userId !== undefined && inquiry?.userId !== null && String(inquiry.userId).trim() !== '') {
-        return sameId(inquiry.userId, currentUserId)
-      }
-
-      // If we cannot prove ownership, hide the record.
-      return false
-    })
-  }, [payments, inquiriesMap, currentUserId])
-
-  const inquiriesView = useMemo(() => {
-    const list = Object.values(inquiriesMap)
-    if (!currentUserId) return list
-    return list.filter((inq) => sameId(inq?.userId, currentUserId))
-  }, [inquiriesMap, currentUserId])
+  const inquiryPriceError = useMemo(() => {
+    if (!selectedInquiry) return ''
+    if (!Number.isFinite(inquiryAmount)) {
+      return 'Harga tidak tersedia dari Inquiry. Silakan hubungi admin atau periksa data inquiry.'
+    }
+    return ''
+  }, [selectedInquiry, inquiryAmount])
 
   const extractBackendErrorMessage = (err) => {
     const data = err?.response?.data
@@ -234,249 +165,213 @@ function Payments() {
     return data.message || data.error || ''
   }
 
-  const getPaymentsPayloadInquiryId = (value) => {
-    const trimmed = String(value || '').trim()
-    return trimmed
+  const readFileAsDataUrl = (file) => {
+    return new Promise((resolve, reject) => {
+      if (!file) {
+        resolve('')
+        return
+      }
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result || ''))
+      reader.onerror = () => reject(reader.error || new Error('Failed to read file'))
+      reader.readAsDataURL(file)
+    })
   }
 
-  const handleCreatePayment = async (e) => {
+  const toBase64PayloadString = async (file) => {
+    if (!file) return ''
+    const mime = String(file.type || '').toLowerCase()
+    const isPng = mime === 'image/png'
+    const isJpeg = mime === 'image/jpeg' || mime === 'image/jpg'
+    if (!isPng && !isJpeg) return ''
+
+    const dataUrl = await readFileAsDataUrl(file)
+    if (!dataUrl) return ''
+
+    // data:[mime];base64,XXXX
+    const commaIndex = dataUrl.indexOf(',')
+    if (commaIndex === -1) return ''
+    const base64 = dataUrl.slice(commaIndex + 1).trim()
+    return base64
+  }
+
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    setCreateMessage('')
+    setMessage('')
     setError('')
 
     if (!currentUserId) {
-      setCreateMessage('User ID tidak ditemukan. Silakan login ulang.')
+      setMessage('User tidak terdeteksi. Silakan login ulang.')
       return
     }
 
-    const inquiryId = getPaymentsPayloadInquiryId(createForm.inquiryId)
+    const inquiryId = String(form.inquiryId || '').trim()
     if (!inquiryId) {
-      setCreateMessage('Pilih inquiry terlebih dahulu.')
+      setMessage('Pilih inquiry terlebih dahulu.')
       return
     }
 
-    if (!createForm.proofFile) {
-      setCreateMessage('Bukti pembayaran (proof) wajib diupload.')
+    if (!form.proofFile) {
+      setMessage('Bukti pembayaran wajib diupload.')
       return
     }
 
-    // Backend validation requires: user_id and proof
-    const payload = {
-      user_id: String(currentUserId),
-      inquiry_id: inquiryId,
-      // Backend expects proof as array: proof[]
-      proof: [createForm.proofFile],
+    const proofMime = String(form.proofFile?.type || '').toLowerCase()
+    if (proofMime && !['image/jpeg', 'image/jpg', 'image/png'].includes(proofMime)) {
+      setMessage('Bukti pembayaran harus berupa gambar JPG atau PNG.')
+      return
+    }
+
+    if (!Number.isFinite(inquiryAmount)) {
+      setMessage('Tidak bisa submit karena harga inquiry tidak tersedia.')
+      return
     }
 
     setCreating(true)
     try {
-      const res = await paymentsAPI.create(payload)
+      const proofBase64 = await toBase64PayloadString(form.proofFile)
+      if (!proofBase64) {
+        setMessage('Bukti pembayaran tidak valid. Gunakan gambar JPG atau PNG.')
+        return
+      }
 
-      // Try to pick payment id from common shapes
-      const raw = res?.data || res
-      const paymentId = raw?.payment_id || raw?.id || raw?.paymentId || raw?.uuid || ''
-
-      setCreateMessage('Pembayaran berhasil dibuat. Silakan cek daftar pembayaran di bawah.')
-      setCreateForm((prev) => ({ ...prev, proofFile: null }))
-      await fetchPayments(currentUserId, false)
+      await paymentsAPI.create({
+        inquiry_id: inquiryId,
+        user_id: currentUserId,
+        method: 'Manual',
+        proof: [proofBase64],
+        // Keep contract-compatible: backend may ignore, but we still send inquiry-derived price.
+        total_price: inquiryAmount,
+      })
+      setMessage('Pembayaran berhasil dikirim. Silakan tunggu verifikasi admin.')
+      setForm((prev) => ({ ...prev, proofFile: null }))
     } catch (err) {
       console.error('Failed to create payment', err)
-      const msg = extractBackendErrorMessage(err) || 'Gagal membuat pembayaran. Coba lagi.'
-      setCreateMessage(msg)
+      setMessage(extractBackendErrorMessage(err) || 'Gagal membuat pembayaran. Coba lagi.')
     } finally {
       setCreating(false)
     }
   }
 
-  const renderStatus = (status) => {
-    const meta = statusMeta[status] || { label: status || 'Unknown', variant: 'secondary' }
-    return <Badge bg={meta.variant}>{meta.label}</Badge>
-  }
-
   return (
-    <>
-      <Navbar />
-      <div className="bg-slate-50 min-h-screen">
-        <Container className="py-5 px-3">
-          <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
-            <div>
-              <h2 className="fw-bold mb-1">Pembayaran Saya</h2>
-              <p className="text-muted mb-0">Pantau status pembayaran dan keterkaitan inquiry.</p>
-            </div>
-            <div className="d-flex align-items-center gap-2">
-              {lastSync && (
-                <OverlayTrigger placement="bottom" overlay={<Tooltip id="sync-tooltip">Terakhir sinkron: {formatDate(lastSync)}</Tooltip>}>
-                  <span className="text-muted small">Sinkron otomatis setiap 10 detik</span>
-                </OverlayTrigger>
-              )}
-              <Button variant="outline-primary" size="sm" onClick={() => fetchPayments(currentUserId)} disabled={refreshing}>
-                {refreshing ? 'Menyinkronkan...' : 'Sinkronkan sekarang'}
-              </Button>
-            </div>
+    <div className="bg-slate-50 min-h-screen">
+      <Container className="py-5 px-3">
+        <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+          <div>
+            <h2 className="fw-bold mb-1">Pembayaran</h2>
+            <p className="text-muted mb-0">Pembayaran awal berdasarkan inquiry yang Anda pilih.</p>
           </div>
+          <Button variant="outline-secondary" onClick={() => navigate('/payment-history')}>
+            Riwayat Pembayaran
+          </Button>
+        </div>
 
-          {error && (
-            <Alert variant="danger" onClose={() => setError('')} dismissible>
-              {error}
-            </Alert>
-          )}
+        {error && (
+          <Alert variant="danger" onClose={() => setError('')} dismissible>
+            {error}
+          </Alert>
+        )}
 
-          <Card className="rounded-2xl border border-slate-200 mb-3">
-            <Card.Body>
-              <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-                <div>
-                  <div className="fw-bold">Buat Pembayaran</div>
-                  <div className="text-muted small">Pilih inquiry Anda lalu upload bukti pembayaran.</div>
-                </div>
+        <Card className="rounded-2xl border border-slate-200">
+          <Card.Body>
+            <div className="fw-bold mb-2">Buat Pembayaran</div>
+            <div className="text-muted small mb-3">Pilih inquiry, lihat total, lalu upload bukti pembayaran.</div>
+
+            {message && (
+              <Alert
+                variant={message.toLowerCase().includes('berhasil') ? 'success' : 'warning'}
+                className="mb-3"
+                onClose={() => setMessage('')}
+                dismissible
+              >
+                {message}
+              </Alert>
+            )}
+
+            {loading ? (
+              <div className="d-flex justify-content-center py-5 text-muted align-items-center gap-2">
+                <Spinner animation="border" size="sm" /> Memuat inquiry...
               </div>
-
-              {createMessage && (
-                <Alert variant={createMessage.toLowerCase().includes('berhasil') ? 'success' : 'warning'} className="mb-3" onClose={() => setCreateMessage('')} dismissible>
-                  {createMessage}
-                </Alert>
-              )}
-
-              <Form onSubmit={handleCreatePayment}>
+            ) : (
+              <Form onSubmit={handleSubmit}>
                 <Row className="g-3">
                   <Col xs={12} md={6}>
                     <Form.Label className="small text-muted">Inquiry</Form.Label>
                     <Form.Select
-                      value={createForm.inquiryId}
-                      onChange={(e) => setCreateForm((prev) => ({ ...prev, inquiryId: e.target.value }))}
+                      value={form.inquiryId}
+                      onChange={(e) => setForm((prev) => ({ ...prev, inquiryId: e.target.value }))}
                       disabled={creating}
                     >
                       <option value="">-- Pilih inquiry --</option>
-                      {inquiriesView.map((inq) => (
+                      {inquiries.map((inq) => (
                         <option key={inq.id} value={inq.id}>
-                          {inq.id} {inq.unitId ? `• Unit ${inq.unitId}` : ''} {inq.status ? `• ${inq.status}` : ''}
+                          {inq.id} • {inq.purchaseType === 'rent' ? 'Sewa' : 'Beli'} • {(() => {
+                            const unitTypeId = String(inq.unitTypeId || '').trim()
+                            const unitNumber = unitNumberMap[unitTypeId]
+                            if (unitNumber) return `Unit ${formatUnitNumber(unitNumber)}`
+                            return unitTypeNameMap[unitTypeId] || '-'
+                          })()}
                         </option>
                       ))}
                     </Form.Select>
-                    {initialInquiryId && !inquiriesMap[initialInquiryId] && (
-                      <div className="text-muted small mt-1">Inquiry ID dari halaman sebelumnya: {initialInquiryId}</div>
-                    )}
                   </Col>
 
                   <Col xs={12} md={6}>
-                    <Form.Label className="small text-muted">Bukti Pembayaran (Proof) *</Form.Label>
-                    <Form.Control
-                      type="file"
-                      accept="image/*,application/pdf"
-                      onChange={(e) => setCreateForm((prev) => ({ ...prev, proofFile: e.target.files?.[0] || null }))}
-                      disabled={creating}
-                    />
+                    <Form.Label className="small text-muted">Ringkasan Inquiry</Form.Label>
+                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                      <div className="text-muted small">Inquiry ID</div>
+                      <div className="fw-semibold text-slate-900">{selectedInquiry ? String(selectedInquiry.id) : '-'}</div>
+
+                      <div className="text-muted small mt-2">Tipe transaksi</div>
+                      <div className="fw-semibold text-slate-900">
+                        {selectedInquiry ? (String(selectedInquiry.purchaseType).toLowerCase() === 'rent' ? 'Sewa' : 'Beli') : '-'}
+                      </div>
+
+                      <div className="text-muted small mt-2">Unit</div>
+                      <div className="fw-semibold text-slate-900">{selectedInquiry ? selectedInquiryUnitLabel : '-'}</div>
+
+                      <div className="text-muted small mt-2">Total Harga yang harus dibayar</div>
+                      <div className="fw-bold text-slate-900">
+                        {Number.isFinite(inquiryAmount) ? formatCurrency(inquiryAmount) : '-'}
+                      </div>
+                    </div>
+
+                    {selectedInquiry && inquiryPriceError && (
+                      <Alert variant="danger" className="mt-2 mb-0">
+                        {inquiryPriceError}
+                      </Alert>
+                    )}
                   </Col>
 
                   <Col xs={12}>
-                    <div className="d-flex flex-wrap gap-2">
-                      <Button type="submit" variant="dark" disabled={creating}>
-                        {creating ? 'Memproses...' : 'Buat Pembayaran'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline-secondary"
-                        disabled={creating}
-                        onClick={() => setCreateForm((prev) => ({ ...prev, proofFile: null }))}
-                      >
-                        Reset
-                      </Button>
-                    </div>
+                    <Form.Label className="small text-muted">Bukti Pembayaran</Form.Label>
+                    <Form.Control
+                      type="file"
+                      accept="image/*,application/pdf"
+                      disabled={creating}
+                      onChange={(e) => setForm((prev) => ({ ...prev, proofFile: e.target.files?.[0] || null }))}
+                    />
+                    <div className="text-muted small mt-1">Format: JPG/PNG/PDF. Upload 1 file.</div>
+                  </Col>
+
+                  <Col xs={12}>
+                    <Button type="submit" variant="dark" disabled={creating || !selectedInquiry || !Number.isFinite(inquiryAmount)}>
+                      {creating ? (
+                        <>
+                          <Spinner animation="border" size="sm" className="me-2" /> Mengirim...
+                        </>
+                      ) : (
+                        'Kirim Pembayaran'
+                      )}
+                    </Button>
                   </Col>
                 </Row>
               </Form>
-            </Card.Body>
-          </Card>
-
-          {loading ? (
-            <div className="d-flex justify-content-center py-5 text-muted align-items-center gap-2">
-              <Spinner animation="border" size="sm" /> Memuat pembayaran...
-            </div>
-          ) : paymentsView.length === 0 ? (
-            <Card className="rounded-2xl border border-slate-200">
-              <Card.Body className="text-center text-muted py-5">
-                Belum ada pembayaran yang tercatat.
-              </Card.Body>
-            </Card>
-          ) : (
-            <Row className="g-3">
-              {paymentsView.map((payment) => {
-                const inquiry = inquiriesMap[payment.inquiryId]
-                return (
-                  <Col key={payment.id} xs={12} md={6} lg={4}>
-                    <Card className="h-100 rounded-2xl border border-slate-200 shadow-sm">
-                      <Card.Body className="d-flex flex-column gap-2">
-                        <div className="d-flex justify-content-between align-items-start">
-                          <div>
-                            <div className="text-muted small">Payment ID</div>
-                            <div className="fw-semibold">{payment.reference || payment.id}</div>
-                          </div>
-                          {renderStatus(payment.status)}
-                        </div>
-
-                        <div className="d-flex justify-content-between align-items-center">
-                          <div className="text-muted small">Jumlah</div>
-                          <div className="fw-bold text-slate-900">{formatCurrency(payment.amount)}</div>
-                        </div>
-
-                        <div className="d-flex justify-content-between align-items-center text-muted small">
-                          <span>Metode</span>
-                          <span className="text-slate-800 fw-semibold">{payment.method}</span>
-                        </div>
-
-                        <div className="d-flex justify-content-between align-items-center text-muted small">
-                          <span>Jatuh tempo</span>
-                          <span className="text-slate-800">{formatDate(payment.dueDate)}</span>
-                        </div>
-
-                        {payment.paidAt && (
-                          <div className="d-flex justify-content-between align-items-center text-muted small">
-                            <span>Dibayar</span>
-                            <span className="text-slate-800">{formatDate(payment.paidAt)}</span>
-                          </div>
-                        )}
-
-                        <div className="d-flex justify-content-between align-items-center text-muted small">
-                          <span>Inquiry</span>
-                          <span className="text-slate-800 fw-semibold">{payment.inquiryId || '-'}</span>
-                        </div>
-
-                        {inquiry && (
-                          <div className="rounded-2xl bg-slate-50 border border-dashed border-slate-200 p-3">
-                            <div className="fw-semibold mb-1">Detail Inquiry</div>
-                            <div className="small text-muted">Unit: <span className="text-slate-800 fw-semibold">{inquiry.unitId || '-'}</span></div>
-                            <div className="small text-muted">Tipe: <span className="text-slate-800 fw-semibold">{inquiry.purchaseType === 'rent' ? 'Sewa' : 'Beli'}</span></div>
-                            <div className="small text-muted">Status: <span className="text-slate-800 fw-semibold">{inquiry.status}</span></div>
-                          </div>
-                        )}
-
-                        {(payment.invoiceUrl || payment.proofUrl) && (
-                          <div className="d-flex flex-wrap gap-2 mt-2">
-                            {payment.invoiceUrl && (
-                              <Button as="a" href={payment.invoiceUrl} target="_blank" rel="noreferrer" variant="outline-secondary" size="sm">
-                                Lihat Invoice
-                              </Button>
-                            )}
-                            {payment.proofUrl && (
-                              <Button as="a" href={payment.proofUrl} target="_blank" rel="noreferrer" variant="outline-secondary" size="sm">
-                                Bukti Pembayaran
-                              </Button>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="text-muted small mt-auto">
-                          Diperbarui: {formatDate(payment.updatedAt || payment.createdAt)}
-                        </div>
-                      </Card.Body>
-                    </Card>
-                  </Col>
-                )
-              })}
-            </Row>
-          )}
-        </Container>
-      </div>
-    </>
+            )}
+          </Card.Body>
+        </Card>
+      </Container>
+    </div>
   )
 }
 

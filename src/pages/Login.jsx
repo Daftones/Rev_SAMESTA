@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Form, Button, Alert, Spinner, InputGroup } from 'react-bootstrap'
 import { useNavigate } from 'react-router-dom'
 import logo from '../assets/samesta logo.png'
@@ -70,7 +70,16 @@ function Login() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [flash, setFlash] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const msg = sessionStorage.getItem('logoutFlash')
+    if (msg) {
+      setFlash(String(msg))
+      sessionStorage.removeItem('logoutFlash')
+    }
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -206,6 +215,12 @@ function Login() {
         {error && (
           <Alert variant="danger" dismissible onClose={() => setError('')}>
             {error}
+          </Alert>
+        )}
+
+        {flash && (
+          <Alert variant="success" dismissible onClose={() => setFlash('')}>
+            {flash}
           </Alert>
         )}
 

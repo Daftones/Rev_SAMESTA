@@ -2,43 +2,49 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom'
 import { Container, Navbar, Nav, Dropdown, Badge, Toast, ToastContainer } from 'react-bootstrap'
 import logo from '../assets/samesta logo.png'
+import { inquiriesAPI, paymentsAPI } from '../services/api'
 
 const ADMIN_EMAILS = ['samestajakabaring@gmail.com']
+
+const readStoredUser = () => {
+  const userStr = localStorage.getItem('user')
+  if (!userStr) return null
+  try {
+    const parsed = JSON.parse(userStr)
+    return (parsed && typeof parsed === 'object') ? parsed : null
+  } catch (err) {
+    console.warn('Invalid stored user, clearing...', err)
+    localStorage.removeItem('user')
+    return null
+  }
+}
 
 function AdminDashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [adminUsername, setAdminUsername] = useState('')
+  const [adminUsername] = useState(() => {
+    const user = readStoredUser()
+    return String(user?.name || 'Admin')
+  })
   const [newInquiriesCount, setNewInquiriesCount] = useState(0)
+  const [newPaymentsCount, setNewPaymentsCount] = useState(0)
+  const [pendingInquiriesCount, setPendingInquiriesCount] = useState(0)
+  const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0)
   const [isSidebarNearby, setIsSidebarNearby] = useState(false)
   const [showToast, setShowToast] = useState(false)
-  const [toastCount, setToastCount] = useState(0)
+  const [toastTitle, setToastTitle] = useState('')
+  const [toastBody, setToastBody] = useState('')
   const sidebarRef = useRef(null)
 
   useEffect(() => {
     const token = localStorage.getItem('authToken')
-    const userStr = localStorage.getItem('user')
-
-    let user = null
-    if (userStr) {
-      try {
-        const parsed = JSON.parse(userStr)
-        if (parsed && typeof parsed === 'object') {
-          user = parsed
-        }
-      } catch (err) {
-        console.warn('Invalid stored user, clearing...', err)
-        localStorage.removeItem('user')
-      }
-    }
+    const user = readStoredUser()
 
     const isAdminByRole = user?.role === 'admin'
     const isAdminByEmail = user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())
 
     if (!token || !user || (!isAdminByRole && !isAdminByEmail)) {
-      navigate('/login', { replace: true })
-    } else {
-      setAdminUsername(user.name || 'Admin')
+      navigate('/admin/login', { replace: true })
     }
   }, [navigate])
 
@@ -59,35 +65,109 @@ function AdminDashboard() {
     return () => window.removeEventListener('mousemove', handleMouseMove)
   }, [])
 
-  // Count new/pending inquiries
+  // Poll backend for inquiries + payments (frontend-only notifications).
+  // Badges show "new since last viewed" and clear when admin opens the related page.
   useEffect(() => {
-    const countPendingInquiries = () => {
-      const savedInquiries = localStorage.getItem('inquiries')
-      if (savedInquiries) {
-        const inquiries = JSON.parse(savedInquiries)
-        const pendingCount = inquiries.filter(inq => ['pending', 'sent'].includes(inq.status)).length
-        setNewInquiriesCount((prev) => {
-          if (pendingCount > prev) {
-            setToastCount(pendingCount - prev)
-            setShowToast(true)
-          }
-          return pendingCount
-        })
+    const PREV_POLL_INQUIRY_KEY = 'adminNotif:lastPendingInquiryCount'
+    const PREV_POLL_PAYMENT_KEY = 'adminNotif:lastPendingPaymentCount'
+    const SEEN_INQUIRY_KEY = 'adminNotif:seenPendingInquiryCount'
+    const SEEN_PAYMENT_KEY = 'adminNotif:seenPendingPaymentCount'
+
+    const normalizeStatus = (v) => String(v || '').toLowerCase().trim()
+
+    const poll = async () => {
+      try {
+        const [inqRes, payRes] = await Promise.all([
+          inquiriesAPI.getAll(),
+          paymentsAPI.getAll({ limit: 500 }),
+        ])
+
+        const inqList = Array.isArray(inqRes?.data) ? inqRes.data : Array.isArray(inqRes) ? inqRes : []
+        const pendingInq = inqList.filter((inq) => {
+          const s = normalizeStatus(inq?.status)
+          return s === 'pending' || s === 'sent'
+        }).length
+
+        const payList = Array.isArray(payRes?.data) ? payRes.data : Array.isArray(payRes) ? payRes : []
+        const pendingPay = payList.filter((p) => {
+          const s = normalizeStatus(p?.status)
+          return s === 'pending' || s === 'waiting_verification'
+        }).length
+
+        setPendingInquiriesCount(pendingInq)
+        setPendingPaymentsCount(pendingPay)
+
+        const prevInq = Number(sessionStorage.getItem(PREV_POLL_INQUIRY_KEY) || '0')
+        const prevPay = Number(sessionStorage.getItem(PREV_POLL_PAYMENT_KEY) || '0')
+        const inqDelta = Math.max(0, pendingInq - prevInq)
+        const payDelta = Math.max(0, pendingPay - prevPay)
+
+        if (inqDelta > 0) {
+          setToastTitle('Inquiry Baru')
+          setToastBody(`${inqDelta} inquiry baru menunggu review.`)
+          setShowToast(true)
+        } else if (payDelta > 0) {
+          setToastTitle('Pembayaran Baru')
+          setToastBody(`${payDelta} pembayaran baru menunggu verifikasi.`)
+          setShowToast(true)
+        }
+
+        sessionStorage.setItem(PREV_POLL_INQUIRY_KEY, String(pendingInq))
+        sessionStorage.setItem(PREV_POLL_PAYMENT_KEY, String(pendingPay))
+
+        const seenInq = Number(sessionStorage.getItem(SEEN_INQUIRY_KEY) || '0')
+        const seenPay = Number(sessionStorage.getItem(SEEN_PAYMENT_KEY) || '0')
+
+        const onInquiriesPage = location.pathname.startsWith('/admin/inquiries')
+        const onPaymentsPage = location.pathname.startsWith('/admin/payments')
+
+        if (onInquiriesPage) {
+          sessionStorage.setItem(SEEN_INQUIRY_KEY, String(pendingInq))
+        }
+        if (onPaymentsPage) {
+          sessionStorage.setItem(SEEN_PAYMENT_KEY, String(pendingPay))
+        }
+
+        const effectiveSeenInq = onInquiriesPage ? pendingInq : seenInq
+        const effectiveSeenPay = onPaymentsPage ? pendingPay : seenPay
+
+        setNewInquiriesCount(Math.max(0, pendingInq - effectiveSeenInq))
+        setNewPaymentsCount(Math.max(0, pendingPay - effectiveSeenPay))
+      } catch (err) {
+        // Silent fail: notifications are best-effort.
+        if (import.meta?.env?.DEV) {
+          console.warn('Admin notification poll failed', err)
+        }
       }
     }
 
-    countPendingInquiries()
-    
-    // Set up interval to check for new inquiries every 5 seconds
-    const interval = setInterval(countPendingInquiries, 5000)
-    
+    poll()
+    const interval = setInterval(poll, 5000)
     return () => clearInterval(interval)
   }, [location.pathname])
+
+  // Clear badges immediately on navigation (don’t wait for the next poll tick).
+  useEffect(() => {
+    const SEEN_INQUIRY_KEY = 'adminNotif:seenPendingInquiryCount'
+    const SEEN_PAYMENT_KEY = 'adminNotif:seenPendingPaymentCount'
+
+    if (location.pathname.startsWith('/admin/inquiries')) {
+      sessionStorage.setItem(SEEN_INQUIRY_KEY, String(pendingInquiriesCount))
+      setNewInquiriesCount(0)
+    }
+
+    if (location.pathname.startsWith('/admin/payments')) {
+      sessionStorage.setItem(SEEN_PAYMENT_KEY, String(pendingPaymentsCount))
+      setNewPaymentsCount(0)
+    }
+  }, [location.pathname, pendingInquiriesCount, pendingPaymentsCount])
 
   const handleLogout = () => {
     localStorage.removeItem('authToken')
     localStorage.removeItem('user')
-    navigate('/login', { replace: true })
+    sessionStorage.removeItem('redirectAfterLogin')
+    sessionStorage.setItem('logoutFlash', 'Logout berhasil.')
+    navigate('/', { replace: true })
   }
 
   const isActive = (path) => {
@@ -107,6 +187,13 @@ function AdminDashboard() {
               <Nav.Item className="d-flex align-items-center me-3">
                 <Badge bg="danger" pill>
                   {newInquiriesCount} Inquiry Baru
+                </Badge>
+              </Nav.Item>
+            )}
+            {newPaymentsCount > 0 && (
+              <Nav.Item className="d-flex align-items-center me-3">
+                <Badge bg="warning" text="dark" pill>
+                  {newPaymentsCount} Pembayaran Baru
                 </Badge>
               </Nav.Item>
             )}
@@ -155,6 +242,11 @@ function AdminDashboard() {
             className={`flex items-center gap-2 rounded-full px-3 py-2 font-semibold ${isActive('/admin/payments') ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-800'}`}
           >
             💳 Pembayaran
+            {newPaymentsCount > 0 && (
+              <Badge bg="warning" text="dark" pill className="ms-1">
+                {newPaymentsCount}
+              </Badge>
+            )}
           </Link>
         </div>
       </div>
@@ -197,6 +289,11 @@ function AdminDashboard() {
             >
               <span className="text-lg">💳</span>
               Kelola Pembayaran
+              {newPaymentsCount > 0 && (
+                <Badge bg="warning" text="dark" pill className="ms-2">
+                  {newPaymentsCount}
+                </Badge>
+              )}
             </Link>
             <Link 
               to="/" 
@@ -217,10 +314,10 @@ function AdminDashboard() {
       <ToastContainer position="bottom-end" className="p-3">
         <Toast bg="dark" onClose={() => setShowToast(false)} show={showToast} delay={4000} autohide>
           <Toast.Header closeButton={true}>
-            <strong className="me-auto">Inquiry Baru</strong>
+            <strong className="me-auto">{toastTitle || 'Notifikasi'}</strong>
             <small>Realtime</small>
           </Toast.Header>
-          <Toast.Body className="text-white">{toastCount} inquiry baru menunggu review.</Toast.Body>
+          <Toast.Body className="text-white">{toastBody || 'Ada update baru.'}</Toast.Body>
         </Toast>
       </ToastContainer>
     </div>

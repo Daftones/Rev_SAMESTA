@@ -11,6 +11,7 @@ import twoBedImg from '../assets/2 bedroom.png'
 import twoBed1Img from '../assets/2br(1).jpeg'
 import twoBed2Img from '../assets/2br(2).jpeg'
 import floorPlanImg from '../assets/floor_plan.jpeg'
+import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
 
 function ApartmentDetail() {
   const { id } = useParams()
@@ -25,6 +26,7 @@ function ApartmentDetail() {
 
   const [selectedImage, setSelectedImage] = useState(0)
   const [apartment, setApartment] = useState(null)
+  const [unitNumber, setUnitNumber] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -41,9 +43,21 @@ function ApartmentDetail() {
       setLoading(true)
       setError(null)
       try {
-        const res = await unitTypesAPI.getOne(id)
-        const data = res?.data || res
+        const [oneRes, allRes] = await Promise.all([
+          unitTypesAPI.getOne(id),
+          unitTypesAPI.getAll(),
+        ])
+        const data = oneRes?.data || oneRes
         setApartment(data)
+
+        const allList = Array.isArray(allRes?.data) ? allRes.data : Array.isArray(allRes) ? allRes : []
+        const unitNumberMap = buildUnitNumberMap(allList, {
+          getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
+          getFloor: (x) => x?.floor,
+          getName: (x) => x?.name,
+        })
+        const resolved = unitNumberMap[String(id ?? '').trim()] || null
+        setUnitNumber(resolved)
       } catch (err) {
         console.error('Failed to load apartment detail', err)
         setError('Gagal memuat detail apartemen')
@@ -129,6 +143,16 @@ function ApartmentDetail() {
   const priceLabel = preference === 'beli' ? 'Harga Jual' : 'Harga Sewa'
   const period = preference === 'sewa' ? '/bulan' : ''
 
+  const installmentOptions = (() => {
+    const salePrice = Number(apartment?.sale_price)
+    const validSalePrice = Number.isFinite(salePrice) && salePrice > 0 ? salePrice : null
+    const tenors = [6, 12, 24]
+    return tenors.map((months) => {
+      const monthly = validSalePrice ? Math.ceil(validSalePrice / months) : null
+      return { months, monthly }
+    })
+  })()
+
   const handleInquiry = () => {
     const unitTypeId = String(apartment?.unit_type_id || apartment?.id || id || '').trim()
     navigate(`/inquiry?unit_type_id=${encodeURIComponent(unitTypeId)}`, { state: { unitTypeId } })
@@ -196,8 +220,13 @@ function ApartmentDetail() {
               <span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${statusBadgeClass(normalizeStatus(apartment.status))}`}>
                 {renderStatus(normalizeStatus(apartment.status))}
               </span>
-              <h1 className="mt-3 text-3xl font-bold text-slate-900 break-words">{apartment.name || 'Unit Apartemen'}</h1>
+              <h1 className="mt-3 text-3xl font-bold text-slate-900 break-words">{unitNumber ? `Unit ${formatUnitNumber(unitNumber)}` : (apartment.name || 'Unit Apartemen')}</h1>
               <p className="text-slate-600">Samesta Jakabaring • Lantai {apartment.floor || '-'}</p>
+
+              <div className="mt-2 text-slate-600">
+                <span className="fw-semibold text-slate-800">Tipe:</span>{' '}
+                {apartment.name?.toLowerCase().includes('studio') ? 'Studio' : '2 Bedroom'}
+              </div>
 
               <div className="mt-6 text-lg font-semibold text-slate-900">Spesifikasi</div>
               <div className="mt-3 grid grid-cols-2 gap-4 md:grid-cols-3">
@@ -304,6 +333,23 @@ function ApartmentDetail() {
                 <div className="text-3xl font-bold text-slate-900">
                   {formatCurrency(price)}
                   <span className="text-sm font-semibold text-slate-500">{period}</span>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <div className="text-sm font-semibold text-slate-500">Daftar Cicilan</div>
+                <div className="mt-2 d-flex flex-column gap-2">
+                  {installmentOptions.map((opt) => (
+                    <div key={opt.months} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                      <div className="d-flex justify-content-between align-items-center gap-2">
+                        <div className="fw-semibold text-slate-800">Tenor {opt.months} bulan</div>
+                        <div className="text-slate-900 fw-bold">
+                          {opt.monthly ? `${formatCurrency(opt.monthly)}/bulan` : '-'}
+                        </div>
+                      </div>
+                      <div className="text-muted small">* Informasi saja, tidak bisa dipilih untuk pembayaran.</div>
+                    </div>
+                  ))}
                 </div>
               </div>
 

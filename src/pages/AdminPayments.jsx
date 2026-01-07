@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { Container, Table, Badge, Button, Modal, Card, Row, Col, Form, Alert, Spinner } from 'react-bootstrap'
 import { paymentsAPI, inquiriesAPI, unitsAPI, unitTypesAPI } from '../services/api'
 import jsPDF from 'jspdf'
@@ -18,7 +18,6 @@ function AdminPayments() {
   const [updatingId, setUpdatingId] = useState('')
   const [lastSync, setLastSync] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [imageErrors, setImageErrors] = useState(new Set())
 
   const statusMeta = {
     pending: { text: 'Pending', variant: 'warning' },
@@ -252,12 +251,6 @@ function AdminPayments() {
     }
   }
 
-  const handleImageError = (e, src) => {
-    console.error('[handleImageError] Failed to load image:', src)
-    console.error('[handleImageError] Base URL:', import.meta.env.VITE_API_BASE_URL)
-    console.error('[handleImageError] Image element:', e.target)
-    setImageErrors(prev => new Set(prev).add(src))
-  }
 
   const handleViewDetails = (payment) => {
     setSelectedPayment(payment)
@@ -370,7 +363,7 @@ function AdminPayments() {
       if (!url) return
       doc.addPage('a4', 'portrait')
       doc.setFontSize(14)
-      doc.text(`Pembayaran ${payment.reference || payment.id} • ${label}`, 40, 40)
+      doc.text(`Pembayaran ${payment.reference || payment.id} â€¢ ${label}`, 40, 40)
       doc.setFontSize(10)
       doc.text(`Inquiry: ${String(payment.inquiryId || '-')}`, 40, 58)
       doc.text(`URL: ${String(url)}`, 40, 74, { maxWidth: 515 })

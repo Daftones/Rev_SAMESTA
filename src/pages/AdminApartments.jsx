@@ -1,12 +1,17 @@
-import { useState, useEffect } from 'react'
-import { Container, Table, Button, Modal, Form, Badge, Alert, Spinner } from 'react-bootstrap'
+import { useMemo, useState, useEffect } from 'react'
+import { Container, Table, Button, Modal, Form, Badge, Alert, Spinner, Pagination } from 'react-bootstrap'
 import { unitTypesAPI } from '../services/api'
+import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
 
 function AdminApartments() {
   const [apartments, setApartments] = useState([])
+  const [filters, setFilters] = useState({ status: 'all', type: 'all', location: '' })
+  const [page, setPage] = useState(1)
+  const pageSize = 10
   const [showModal, setShowModal] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [currentApartment, setCurrentApartment] = useState(null)
+  const [initialFormData, setInitialFormData] = useState(null)
   const [alert, setAlert] = useState({ show: false, message: '', variant: '' })
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
@@ -30,10 +35,134 @@ function AdminApartments() {
     localStorage.setItem('activityLogs', JSON.stringify(logs.slice(0, 50)))
   }
 
+  const getApartmentId = (apartment) => {
+    return String(apartment?.unit_type_id ?? apartment?.id ?? apartment?.uuid ?? '').trim()
+  }
+
+  const sanitizePayload = (payload) => {
+    const next = {}
+    Object.entries(payload || {}).forEach(([key, value]) => {
+      if (value === undefined) return
+      if (typeof value === 'string' && value.trim() === '') return
+      next[key] = value
+    })
+    return next
+  }
+
   // Fetch apartments from backend on mount
   useEffect(() => {
     fetchApartments()
   }, [])
+
+  // Reset pagination when filters/data change
+  useEffect(() => {
+    setPage(1)
+  }, [filters.status, filters.type, filters.location, apartments.length])
+
+  const normalizeStatusForBackend = (value) => {
+    const s = String(value || '').trim().toLowerCase()
+    if (!s) return 'available'
+    if (s === 'occupied' || s === 'booked') return 'book'
+    if (s === 'maintenance') return 'book'
+    if (s === 'available' || s === 'book' || s === 'sold') return s
+    return s
+  }
+
+  const normalizeType = (name) => {
+    const n = String(name || '').toLowerCase()
+    if (!n) return 'other'
+    if (n.includes('studio')) return 'studio'
+    if (n.includes('2') && n.includes('bed')) return '2bedroom'
+    if (n.includes('two') && n.includes('bed')) return '2bedroom'
+    if (n.includes('2br') || n.includes('2 br')) return '2bedroom'
+
+    const m = n.match(/\bunit\s*(\d{3,4})\b/)
+    if (m) {
+      const num = Number(m[1])
+      if (Number.isFinite(num)) {
+        const offset = num % 100
+        if (offset >= 1 && offset <= 26) return 'studio'
+        if (offset >= 27 && offset <= 49) return '2bedroom'
+      }
+    }
+    return 'other'
+  }
+
+  const unitNumberMap = useMemo(() => {
+    return buildUnitNumberMap(apartments, {
+      getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
+      getFloor: (x) => x?.floor,
+      getName: (x) => x?.name,
+    })
+  }, [apartments])
+
+  const getApartmentDisplayName = (apartment) => {
+    const id = String(apartment?.unit_type_id ?? apartment?.id ?? apartment?.uuid ?? '').trim()
+    const unitNumber = unitNumberMap[id]
+    if (unitNumber) return `Unit ${formatUnitNumber(unitNumber)}`
+    return apartment?.name || '-'
+  }
+
+  const filteredApartments = useMemo(() => {
+    const locationNeedle = String(filters.location || '').trim().toLowerCase()
+    return apartments.filter((apartment) => {
+      if (!apartment) return false
+      const status = normalizeStatusForBackend(apartment.status)
+
+      if (filters.status !== 'all' && status !== String(filters.status).toLowerCase()) return false
+
+      if (filters.type !== 'all') {
+        const t = normalizeType(apartment.name)
+        if (t !== filters.type) return false
+      }
+
+      if (locationNeedle) {
+        const hay = [
+          getApartmentDisplayName(apartment),
+          apartment.name,
+          apartment.floor,
+          apartment.size,
+          apartment.facilities,
+        ]
+          .filter((v) => v !== undefined && v !== null)
+          .map((v) => String(v).toLowerCase())
+          .join(' ')
+        if (!hay.includes(locationNeedle)) return false
+      }
+
+      return true
+    })
+  }, [apartments, filters.status, filters.type, filters.location])
+
+  const pageCount = useMemo(() => {
+    const total = filteredApartments.length
+    return Math.max(1, Math.ceil(total / pageSize))
+  }, [filteredApartments.length])
+
+  const clampedPage = Math.min(Math.max(1, page), pageCount)
+
+  const pagedApartments = useMemo(() => {
+    const start = (clampedPage - 1) * pageSize
+    return filteredApartments.slice(start, start + pageSize)
+  }, [filteredApartments, clampedPage])
+
+  const buildPaginationItems = () => {
+    const items = []
+    const maxButtons = 5
+    const half = Math.floor(maxButtons / 2)
+    let start = Math.max(1, clampedPage - half)
+    let end = Math.min(pageCount, start + maxButtons - 1)
+    start = Math.max(1, end - maxButtons + 1)
+
+    for (let p = start; p <= end; p += 1) {
+      items.push(
+        <Pagination.Item key={p} active={p === clampedPage} onClick={() => setPage(p)}>
+          {p}
+        </Pagination.Item>
+      )
+    }
+    return items
+  }
 
   const fetchApartments = async () => {
     setLoading(true)
@@ -59,7 +188,16 @@ function AdminApartments() {
         size: apartment.size || '',
         rent_price: apartment.rent_price || '',
         sale_price: apartment.sale_price || '',
-        status: apartment.status || 'available',
+        status: normalizeStatusForBackend(apartment.status || 'available'),
+        facilities: apartment.facilities || '',
+      })
+      setInitialFormData({
+        name: apartment.name || '',
+        floor: apartment.floor || '',
+        size: apartment.size || '',
+        rent_price: apartment.rent_price || '',
+        sale_price: apartment.sale_price || '',
+        status: normalizeStatusForBackend(apartment.status || 'available'),
         facilities: apartment.facilities || '',
       })
     } else {
@@ -74,6 +212,7 @@ function AdminApartments() {
         status: 'available',
         facilities: '',
       })
+      setInitialFormData(null)
     }
     setShowModal(true)
   }
@@ -104,20 +243,51 @@ function AdminApartments() {
     setLoading(true)
     
     try {
-      const payload = {
+      const basePayload = {
         name: formData.name,
         floor: formData.floor,
         size: formData.size,
         rent_price: formData.rent_price || null,
         sale_price: formData.sale_price || null,
-        status: formData.status,
+        status: normalizeStatusForBackend(formData.status),
         facilities: formData.facilities,
       }
 
+      const isStatusOnlyChange =
+        editMode &&
+        initialFormData &&
+        String(initialFormData.status || '') !== String(formData.status || '') &&
+        String(initialFormData.name || '') === String(formData.name || '') &&
+        String(initialFormData.floor || '') === String(formData.floor || '') &&
+        String(initialFormData.size || '') === String(formData.size || '') &&
+        String(initialFormData.rent_price || '') === String(formData.rent_price || '') &&
+        String(initialFormData.sale_price || '') === String(formData.sale_price || '') &&
+        String(initialFormData.facilities || '') === String(formData.facilities || '')
+
+      const payload = sanitizePayload(
+        isStatusOnlyChange
+          ? { status: normalizeStatusForBackend(formData.status) }
+          : basePayload
+      )
+
       if (editMode) {
-        await unitTypesAPI.update(currentApartment.id, payload)
+        const unitTypeId = getApartmentId(currentApartment)
+        if (!unitTypeId) {
+          throw new Error('UnitType ID tidak ditemukan (undefined). Tidak bisa update status.')
+        }
+
+        await unitTypesAPI.update(unitTypeId, payload)
         showAlert('Apartemen berhasil diupdate!', 'success')
-        logActivity('update', payload.name)
+        logActivity('update', currentApartment?.name || `UnitType ${unitTypeId}`)
+
+        // Update UI immediately without waiting for a full refetch
+        setApartments((prev) =>
+          (Array.isArray(prev) ? prev : []).map((item) => {
+            const itemId = getApartmentId(item)
+            if (String(itemId) !== String(unitTypeId)) return item
+            return { ...item, ...payload }
+          })
+        )
       } else {
         await unitTypesAPI.create(payload)
         showAlert('Apartemen berhasil ditambahkan!', 'success')
@@ -128,24 +298,29 @@ function AdminApartments() {
       fetchApartments()
     } catch (error) {
       console.error('Error saving apartment:', error)
-      showAlert(error.response?.data?.message || 'Gagal menyimpan data apartemen', 'danger')
+      showAlert(error?.response?.data?.message || error?.message || 'Gagal menyimpan data apartemen', 'danger')
     } finally {
       setLoading(false)
     }
   }
 
   const handleDelete = async (id) => {
-    const target = apartments.find((a) => a.id === id)
+    const target = apartments.find((a) => String(getApartmentId(a)) === String(id))
     if (window.confirm('Apakah Anda yakin ingin menghapus apartemen ini?')) {
       setLoading(true)
       try {
-        await unitTypesAPI.delete(id)
+        const unitTypeId = String(id || '').trim()
+        if (!unitTypeId) {
+          throw new Error('UnitType ID tidak ditemukan (undefined). Tidak bisa hapus data.')
+        }
+
+        await unitTypesAPI.delete(unitTypeId)
         showAlert('Apartemen berhasil dihapus!', 'danger')
         logActivity('delete', target?.name || 'Unit')
         fetchApartments()
       } catch (error) {
         console.error('Error deleting apartment:', error)
-        showAlert(error.response?.data?.message || 'Gagal menghapus apartemen', 'danger')
+        showAlert(error?.response?.data?.message || error?.message || 'Gagal menghapus apartemen', 'danger')
       } finally {
         setLoading(false)
       }
@@ -153,13 +328,16 @@ function AdminApartments() {
   }
 
   const getStatusBadge = (status) => {
-    switch(status) {
+    switch(String(status || '').toLowerCase()) {
       case 'available':
         return <Badge bg="success">Tersedia</Badge>
+      case 'book':
       case 'occupied':
-        return <Badge bg="danger">Terisi</Badge>
+      case 'booked':
       case 'maintenance':
-        return <Badge bg="warning">Maintenance</Badge>
+        return <Badge bg="warning" text="dark">Dibooking</Badge>
+      case 'sold':
+        return <Badge bg="danger">Terjual</Badge>
       default:
         return <Badge bg="secondary">{status}</Badge>
     }
@@ -188,12 +366,69 @@ function AdminApartments() {
         </Alert>
       )}
 
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3 mb-3">
+        <Form className="row g-3">
+          <div className="col-12 col-md-3">
+            <Form.Label className="small text-muted">Status</Form.Label>
+            <Form.Select
+              value={filters.status}
+              onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
+              disabled={loading}
+            >
+              <option value="all">Semua</option>
+              <option value="available">Tersedia</option>
+              <option value="book">Dibooking</option>
+              <option value="sold">Terjual</option>
+            </Form.Select>
+          </div>
+
+          <div className="col-12 col-md-3">
+            <Form.Label className="small text-muted">Tipe</Form.Label>
+            <Form.Select
+              value={filters.type}
+              onChange={(e) => setFilters((prev) => ({ ...prev, type: e.target.value }))}
+              disabled={loading}
+            >
+              <option value="all">Semua</option>
+              <option value="studio">Studio</option>
+              <option value="2bedroom">2 Bedroom</option>
+              <option value="other">Lainnya</option>
+            </Form.Select>
+          </div>
+
+          <div className="col-12 col-md-6">
+            <Form.Label className="small text-muted">Lokasi / Kata Kunci</Form.Label>
+            <Form.Control
+              type="text"
+              placeholder="Cari nama, lantai, fasilitas, dll"
+              value={filters.location}
+              onChange={(e) => setFilters((prev) => ({ ...prev, location: e.target.value }))}
+              disabled={loading}
+            />
+          </div>
+        </Form>
+
+        <div className="d-flex flex-wrap justify-content-between align-items-center mt-3 gap-2">
+          <div className="text-muted small">
+            Menampilkan {filteredApartments.length === 0 ? 0 : (clampedPage - 1) * pageSize + 1}–{Math.min(clampedPage * pageSize, filteredApartments.length)} dari {filteredApartments.length} data
+          </div>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            onClick={() => setFilters({ status: 'all', type: 'all', location: '' })}
+            disabled={loading}
+          >
+            Reset Filter
+          </Button>
+        </div>
+      </div>
+
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <Table hover responsive className="mb-0 align-middle">
           <thead className="bg-slate-900 text-white">
             <tr>
               <th>#</th>
-              <th>Nama</th>
+              <th>Unit</th>
               <th>Lantai</th>
               <th>Size</th>
               <th>Status</th>
@@ -211,17 +446,17 @@ function AdminApartments() {
                   </Spinner>
                 </td>
               </tr>
-            ) : apartments.length === 0 ? (
+            ) : filteredApartments.length === 0 ? (
               <tr>
                 <td colSpan="8" className="text-center py-4 text-slate-500">
-                  Belum ada data apartemen
+                  Tidak ada data yang sesuai filter
                 </td>
               </tr>
             ) : (
-              apartments.map((apartment, index) => (
-                <tr key={apartment.id}>
-                  <td>{index + 1}</td>
-                  <td>{apartment.name}</td>
+              pagedApartments.map((apartment, index) => (
+                <tr key={getApartmentId(apartment) || index}>
+                  <td>{(clampedPage - 1) * pageSize + index + 1}</td>
+                  <td>{getApartmentDisplayName(apartment)}</td>
                   <td>{apartment.floor}</td>
                   <td>{apartment.size}</td>
                   <td>{getStatusBadge(apartment.status)}</td>
@@ -240,7 +475,7 @@ function AdminApartments() {
                       <Button 
                         variant="outline-danger" 
                         size="sm"
-                        onClick={() => handleDelete(apartment.id)}
+                        onClick={() => handleDelete(getApartmentId(apartment))}
                         className="w-100"
                       >
                         Hapus
@@ -253,6 +488,16 @@ function AdminApartments() {
           </tbody>
         </Table>
       </div>
+
+      {filteredApartments.length > 0 && (
+        <div className="d-flex justify-content-center mt-3">
+          <Pagination className="mb-0">
+            <Pagination.Prev onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={clampedPage <= 1} />
+            {buildPaginationItems()}
+            <Pagination.Next onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={clampedPage >= pageCount} />
+          </Pagination>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       <Modal show={showModal} onHide={handleCloseModal} centered>
@@ -316,8 +561,8 @@ function AdminApartments() {
                 required
               >
                 <option value="available">Tersedia</option>
-                <option value="occupied">Terisi</option>
-                <option value="maintenance">Maintenance</option>
+                <option value="book">Dibooking</option>
+                <option value="sold">Terjual</option>
               </Form.Select>
             </Form.Group>
 

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, Badge, Button, Card, Container, Spinner } from 'react-bootstrap'
-import Navbar from '../components/Navbar'
 import { paymentsAPI } from '../services/api'
 
 function PaymentDetail() {
@@ -44,6 +43,10 @@ function PaymentDetail() {
     const trimmed = path.trim()
     if (!trimmed) return []
     if (trimmed.startsWith('data:')) return [trimmed]
+
+    // Sometimes a data URL gets prefixed (e.g., base URL + '/data:image...')
+    const idx = trimmed.indexOf('data:image')
+    if (idx !== -1) return [trimmed.slice(idx)]
     
     // If already a full URL, ensure HTTPS
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
@@ -122,6 +125,7 @@ function PaymentDetail() {
     const token = localStorage.getItem('authToken')
     const storedUser = localStorage.getItem('user')
     if (!token || !storedUser) {
+      if (sessionStorage.getItem('logoutFeedbackPending') === '1') return
       sessionStorage.setItem('redirectAfterLogin', `/payments/${encodeURIComponent(id || '')}`)
       navigate('/login', { replace: true })
       return
@@ -205,7 +209,6 @@ function PaymentDetail() {
 
   return (
     <>
-      <Navbar />
       <div className="bg-slate-50 min-h-screen">
         <Container className="py-5 px-3">
           <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">

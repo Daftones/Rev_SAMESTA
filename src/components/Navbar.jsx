@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Navbar as BsNavbar, Nav, NavDropdown, Container } from 'react-bootstrap'
 import { useNavigate, Link } from 'react-router-dom'
 import logo from '../assets/samesta logo.png'
@@ -6,33 +6,28 @@ import { authAPI } from '../services/api'
 
 const ADMIN_EMAILS = ['samestajakabaring@gmail.com']
 
+const readStoredUser = () => {
+  const userData = localStorage.getItem('user')
+  if (!userData) return null
+  try {
+    const parsed = JSON.parse(userData)
+    if (parsed && typeof parsed === 'object') return parsed
+  } catch (err) {
+    console.warn('Invalid user data in storage, clearing...', err)
+  }
+  localStorage.removeItem('user')
+  return null
+}
+
 export default function Navbar() {
   const [expanded, setExpanded] = useState(false)
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState(() => readStoredUser())
   const navigate = useNavigate()
 
   const handleLogoClick = () => {
     setExpanded(false)
     navigate('/')
   }
-
-  useEffect(() => {
-    // Safely parse user data; if corrupted, clear it
-    const userData = localStorage.getItem('user')
-    if (!userData) return
-
-    try {
-      const parsed = JSON.parse(userData)
-      if (parsed && typeof parsed === 'object') {
-        setUser(parsed)
-      } else {
-        localStorage.removeItem('user')
-      }
-    } catch (err) {
-      console.warn('Invalid user data in storage, clearing...', err)
-      localStorage.removeItem('user')
-    }
-  }, [])
 
   const isAdmin = (() => {
     if (!user) return false
@@ -47,11 +42,20 @@ export default function Navbar() {
     } catch (err) {
       console.error('Logout error:', err)
     } finally {
-      // Clear local storage
+      // Clear session/state first, then show logout feedback modal (handled globally in App).
       localStorage.removeItem('authToken')
       localStorage.removeItem('user')
+      sessionStorage.removeItem('redirectAfterLogin')
+      sessionStorage.setItem('logoutFeedbackPending', '1')
       setUser(null)
-      navigate('/')
+      setExpanded(false)
+
+      // Notify App to show the modal immediately (Navbar will unmount after auth is cleared).
+      try {
+        window.dispatchEvent(new Event('samesta:logout-success'))
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -86,7 +90,6 @@ export default function Navbar() {
               <NavDropdown.Item href="/room-type/studio">Studio</NavDropdown.Item>
               <NavDropdown.Item href="/room-type/2bedroom">2 Bedroom</NavDropdown.Item>
             </NavDropdown>
-            <Nav.Link href="/promo">Promo</Nav.Link>
             {isAdmin && (
               <Nav.Link href="/admin/dashboard">Admin Dashboard</Nav.Link>
             )}
@@ -107,8 +110,6 @@ export default function Navbar() {
                 {isAdmin && (
                   <Nav.Link href="/admin/dashboard" className="text-slate-800 font-semibold lg:hidden">Admin Dashboard</Nav.Link>
                 )}
-                <Nav.Link href="/inquiry" className="text-slate-800 font-semibold lg:hidden">My Inquiries</Nav.Link>
-                <Nav.Link href="/payments" className="text-slate-800 font-semibold lg:hidden">My Payments</Nav.Link>
                 <Nav.Link onClick={handleLogout} className="text-slate-800 font-semibold lg:hidden">Logout</Nav.Link>
               </>
             )}
@@ -137,7 +138,8 @@ export default function Navbar() {
                 {isAdmin && <NavDropdown.Item href="/admin/dashboard">Admin Dashboard</NavDropdown.Item>}
                 {isAdmin && <NavDropdown.Divider />}
                 <NavDropdown.Item href="/inquiry">My Inquiries</NavDropdown.Item>
-                <NavDropdown.Item href="/payments">My Payments</NavDropdown.Item>
+                <NavDropdown.Item href="/payments">Buat Pembayaran</NavDropdown.Item>
+                <NavDropdown.Item href="/payment-history">Riwayat Pembayaran</NavDropdown.Item>
                 <NavDropdown.Divider />
                 <NavDropdown.Item onClick={handleLogout} className="text-red-600 font-semibold">
                   Logout

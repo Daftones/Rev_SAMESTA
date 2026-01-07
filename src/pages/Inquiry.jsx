@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+﻿import { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Container,
@@ -169,7 +169,7 @@ function Inquiry() {
           videoRef.current.srcObject = mediaStream;
         }
       }, 100);
-    } catch (_err) {
+    } catch {
       showAlertMessage(
         "Tidak dapat mengakses kamera. Pastikan izin kamera diaktifkan.",
         "danger"
@@ -193,7 +193,7 @@ function Inquiry() {
 
     setFormData((prev) => ({
       ...prev,
-      idCardPhoto: base64Image, // ✅ Base64 string
+      idCardPhoto: base64Image, // âœ… Base64 string
     }));
 
     setPhotoPreview(base64Image);
@@ -296,7 +296,7 @@ function Inquiry() {
         if (uid) setCurrentUserId(uid);
         // Prefer uid filter; fallback to email filter
         loadHistory(uid, resolvedEmail);
-      } catch (_err) {
+      } catch {
         // If profile cannot be fetched, fallback to stored user (must still have an id)
         const uid =
           parsed?.id ?? parsed?.user_id ?? parsed?.userId ?? parsed?.uuid ?? "";

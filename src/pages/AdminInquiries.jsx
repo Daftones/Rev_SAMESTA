@@ -3,16 +3,18 @@ import { Container, Table, Badge, Button, Modal, Card, Row, Col, Form, Alert, Sp
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
 import { inquiriesAPI, unitTypesAPI } from '../services/api'
+import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
 
 function AdminInquiries() {
   const [inquiries, setInquiries] = useState([])
+  const [unitMap, setUnitMap] = useState({})
+  const [unitNumberMap, setUnitNumberMap] = useState({})
   const [selectedInquiry, setSelectedInquiry] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [filters, setFilters] = useState({ purchaseType: 'all', from: '', to: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [updatingId, setUpdatingId] = useState('')
-  const [imageErrors, setImageErrors] = useState(new Set())
 
   useEffect(() => {
     loadInquiries()
@@ -99,6 +101,14 @@ function AdminInquiries() {
     return {
       id: raw.id || raw.inquiry_id || raw.uuid || raw._id,
       userId: raw.user_id || raw.userId || raw.user_identifier,
+      userName: (
+        raw?.user?.name ||
+        raw?.customer?.name ||
+        raw?.user_name ||
+        raw?.customer_name ||
+        raw?.name ||
+        ''
+      ),
       userIdentifier: raw.user_identifier || raw.userIdentifier || raw.email || '',
       unitId: raw.unit_id || raw.unitId,
       unitTypeId: raw.unit_type_id || raw.unitTypeId || raw.unit_type || raw.unitType || '',
@@ -110,6 +120,53 @@ function AdminInquiries() {
       idCardPhoto: idCardPhotos[0] || singlePhoto,
       timeline: Array.isArray(raw.timeline) ? raw.timeline : [],
     }
+  }
+
+  const normalizeUnitName = (raw) => {
+    const candidate = raw?.name || raw?.unit_name || raw?.title
+    return String(candidate || '').trim()
+  }
+
+  const buildUnitMap = (list) => {
+    const mapped = {}
+    ;(Array.isArray(list) ? list : []).forEach((raw) => {
+      const id = String(raw?.unit_type_id ?? raw?.id ?? raw?.uuid ?? '').trim()
+      if (!id) return
+      mapped[id] = {
+        id,
+        name: normalizeUnitName(raw),
+      }
+    })
+    return mapped
+  }
+
+  const getInquiryUserLabel = (inq) => {
+    const name = String(inq?.userName || '').trim()
+    if (name) return name
+
+    const identifier = String(inq?.userIdentifier || '').trim()
+    if (identifier) return identifier
+
+    const id = String(inq?.userId || '').trim()
+    if (id) return id
+
+    return '-'
+  }
+
+  const getInquiryUnitLabel = (inq) => {
+    const byTypeId = String(inq?.unitTypeId || '').trim()
+    const byUnitId = String(inq?.unitId || '').trim()
+
+    const byTypeNumber = byTypeId ? unitNumberMap[byTypeId] : null
+    if (byTypeNumber) return `Unit ${formatUnitNumber(byTypeNumber)}`
+
+    const byUnitNumber = byUnitId ? unitNumberMap[byUnitId] : null
+    if (byUnitNumber) return `Unit ${formatUnitNumber(byUnitNumber)}`
+
+    const unit = (byTypeId && unitMap[byTypeId]) ? unitMap[byTypeId] : (byUnitId && unitMap[byUnitId]) ? unitMap[byUnitId] : null
+    const name = String(unit?.name || '').trim()
+    if (name) return name
+    return byTypeId || byUnitId || '-'
   }
 
   const blobToDataUrl = (blob) => {
@@ -136,20 +193,26 @@ function AdminInquiries() {
     return { dataUrl, mime: blob.type || '' }
   }
 
-  const handleImageError = (e, src) => {
-    console.error('[handleImageError] Failed to load image:', src)
-    console.error('[handleImageError] Image element:', e.target)
-    console.error('[handleImageError] Base URL:', import.meta.env.VITE_API_BASE_URL)
-    setImageErrors(prev => new Set(prev).add(src))
-    // Don't hide image, show broken image icon instead for better UX
-  }
-
   const loadInquiries = async () => {
     setLoading(true)
     setError('')
-    setImageErrors(new Set())
     try {
-      const response = await inquiriesAPI.getAll()
+      const [response, unitsRes] = await Promise.all([
+        inquiriesAPI.getAll(),
+        unitTypesAPI.getAll().catch(() => null),
+      ])
+
+      const unitList = Array.isArray(unitsRes?.data) ? unitsRes.data : Array.isArray(unitsRes) ? unitsRes : []
+      const nextUnitMap = buildUnitMap(unitList)
+      setUnitMap(nextUnitMap)
+
+      const nextUnitNumberMap = buildUnitNumberMap(unitList, {
+        getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
+        getFloor: (x) => x?.floor,
+        getName: (x) => x?.name,
+      })
+      setUnitNumberMap(nextUnitNumberMap)
+
       console.log('[loadInquiries] Raw response:', response)
       const list = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : []
       console.log('[loadInquiries] List count:', list.length)
@@ -199,23 +262,6 @@ function AdminInquiries() {
     }
   }
 
-  const getStatusBadge = (status) => {
-    const map = {
-      sent: { text: 'Terkirim', variant: 'secondary' },
-      submitted: { text: 'Terkirim', variant: 'secondary' },
-      contacted: { text: 'Dihubungi', variant: 'info' },
-      scheduled: { text: 'Dijadwalkan', variant: 'primary' },
-      completed: { text: 'Selesai', variant: 'success' },
-      cancelled: { text: 'Dibatalkan', variant: 'danger' },
-      pending: { text: 'Pending', variant: 'warning' },
-      approved: { text: 'Approved', variant: 'success' },
-      rejected: { text: 'Rejected', variant: 'danger' },
-      declined: { text: 'Rejected', variant: 'danger' },
-    }
-    const meta = map[status] || { text: status, variant: 'secondary' }
-    return <Badge bg={meta.variant}>{meta.text}</Badge>
-  }
-
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleString('id-ID', {
       year: 'numeric',
@@ -241,11 +287,11 @@ function AdminInquiries() {
 
   const exportExcel = () => {
     // Generate a simple HTML table that Excel can open
-    const header = ['ID', 'User ID', 'Unit ID', 'Tipe', 'Tanggal']
+    const header = ['ID', 'User', 'Unit', 'Tipe', 'Tanggal']
     const rows = filteredInquiries.map((inq) => [
       inq.id,
-      inq.userId,
-      inq.unitId,
+      getInquiryUserLabel(inq),
+      getInquiryUnitLabel(inq),
       inq.purchaseType,
       formatDate(inq.createdAt)
     ])
@@ -271,9 +317,17 @@ function AdminInquiries() {
     try {
       // Optional enrichment so PDF can include unit info similar to admin context.
       let unitTypesMap = {}
+      let unitNumberMapForExport = {}
       try {
         const res = await unitTypesAPI.getAll()
         const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+
+        unitNumberMapForExport = buildUnitNumberMap(list, {
+          getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
+          getFloor: (x) => x?.floor,
+          getName: (x) => x?.name,
+        })
+
         list.forEach((raw) => {
           const id = String(raw?.unit_type_id ?? raw?.id ?? raw?.uuid ?? '').trim()
           if (!id) return
@@ -299,6 +353,9 @@ function AdminInquiries() {
 
       const tableData = filteredInquiries.map((inq, idx) => {
         const unitType = unitTypesMap[String(inq.unitTypeId || '').trim()]
+        const unitTypeId = String(inq.unitTypeId || '').trim()
+        const derivedUnitNumber = unitTypeId ? unitNumberMapForExport[unitTypeId] : null
+        const derivedUnitLabel = derivedUnitNumber ? `Unit ${formatUnitNumber(derivedUnitNumber)}` : (unitType?.name || '')
         const isRent = String(inq.purchaseType || '').toLowerCase() === 'rent'
         const derivedPrice = unitType
           ? (isRent ? unitType.rentPrice : unitType.salePrice)
@@ -311,7 +368,7 @@ function AdminInquiries() {
           String(inq.userIdentifier || ''),
           String(inq.unitId || ''),
           String(inq.unitTypeId || ''),
-          unitType?.name || '',
+          derivedUnitLabel,
           isRent ? 'Sewa' : 'Beli',
           String(inq.status || ''),
           String(inq.address || ''),
@@ -332,7 +389,7 @@ function AdminInquiries() {
           'User Identifier',
           'Unit ID',
           'Unit Type ID',
-          'Unit Name',
+          'Unit',
           'Tipe',
           'Status',
           'Alamat',
@@ -366,7 +423,7 @@ function AdminInquiries() {
           doc.text(`Inquiry ${String(inq.id || '')} • Foto KTP ${idx + 1}`, 40, 40)
           doc.setFontSize(10)
           doc.text(`User: ${String(inq.userId || '')}`, 40, 58)
-          doc.text(`Unit: ${String(inq.unitId || '')}`, 40, 72)
+          doc.text(`Unit: ${String(getInquiryUnitLabel(inq) || '')}`, 40, 72)
           doc.text(`URL: ${String(url)}`, 40, 86, { maxWidth: 515 })
 
           try {
@@ -453,8 +510,8 @@ function AdminInquiries() {
           <thead className="bg-slate-900 text-white">
             <tr>
               <th>#</th>
-              <th>User ID</th>
-              <th>Unit ID</th>
+              <th>User</th>
+              <th>Unit</th>
               <th>Tipe</th>
               <th>Tanggal</th>
               <th>Aksi</th>
@@ -477,8 +534,18 @@ function AdminInquiries() {
               filteredInquiries.map((inquiry, index) => (
                 <tr key={inquiry.id}>
                   <td>{index + 1}</td>
-                  <td>{inquiry.userId}</td>
-                  <td>{inquiry.unitId}</td>
+                  <td>
+                    <div className="fw-semibold text-slate-900">{getInquiryUserLabel(inquiry)}</div>
+                    {(String(inquiry?.userId || '').trim() && String(inquiry?.userName || '').trim() && String(inquiry?.userId || '').trim() !== String(inquiry?.userName || '').trim()) && (
+                      <div className="text-muted small">ID: {String(inquiry.userId)}</div>
+                    )}
+                  </td>
+                  <td>
+                    <div className="fw-semibold text-slate-900">{getInquiryUnitLabel(inquiry)}</div>
+                    {(String(inquiry?.unitId || '').trim() || String(inquiry?.unitTypeId || '').trim()) && (
+                      <div className="text-muted small">ID: {String(inquiry.unitTypeId || inquiry.unitId || '')}</div>
+                    )}
+                  </td>
                   <td>
                     <Badge bg={inquiry.purchaseType === 'rent' ? 'info' : 'primary'}>
                       {inquiry.purchaseType === 'rent' ? 'Sewa' : 'Beli'}
@@ -520,13 +587,23 @@ function AdminInquiries() {
                   <h5 className="mb-3">Informasi Customer</h5>
 
                   <Row className="mb-2 gy-2">
-                    <Col xs={12} sm={4}><strong>User ID / NIK:</strong></Col>
-                    <Col xs={12} sm={8}>{selectedInquiry.userId}</Col>
+                    <Col xs={12} sm={4}><strong>User:</strong></Col>
+                    <Col xs={12} sm={8}>
+                      <div className="fw-semibold">{getInquiryUserLabel(selectedInquiry)}</div>
+                      {String(selectedInquiry?.userId || '').trim() && (
+                        <div className="text-muted small">User ID/NIK: {String(selectedInquiry.userId)}</div>
+                      )}
+                    </Col>
                   </Row>
 
                   <Row className="mb-2 gy-2">
-                    <Col xs={12} sm={4}><strong>Unit ID:</strong></Col>
-                    <Col xs={12} sm={8}>{selectedInquiry.unitId}</Col>
+                    <Col xs={12} sm={4}><strong>Unit:</strong></Col>
+                    <Col xs={12} sm={8}>
+                      <div className="fw-semibold">{getInquiryUnitLabel(selectedInquiry)}</div>
+                      {(String(selectedInquiry?.unitId || '').trim() || String(selectedInquiry?.unitTypeId || '').trim()) && (
+                        <div className="text-muted small">Unit ID: {String(selectedInquiry.unitTypeId || selectedInquiry.unitId || '')}</div>
+                      )}
+                    </Col>
                   </Row>
 
                   <Row className="mb-2 gy-2">

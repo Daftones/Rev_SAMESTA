@@ -1,10 +1,8 @@
 import { Container, Row, Col } from 'react-bootstrap'
-import Navbar from '../components/Navbar'
 
 function AboutUs() {
   return (
     <>
-      <Navbar />
       <div className="bg-white py-10">
         <Container className="px-3">
           <div className="text-center mb-10">

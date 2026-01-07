@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import HeroCarousel from './components/HeroCarousel'
 import MonthlyPromo from './components/MonthlyPromo'
@@ -20,15 +20,26 @@ import AdminInquiries from './pages/AdminInquiries'
 import AdminPayments from './pages/AdminPayments'
 import Inquiry from './pages/Inquiry'
 import Payments from './pages/Payments'
+import PaymentHistory from './pages/PaymentHistory'
 import Footer from './components/Footer'
 import ScrollToTop from './components/ScrollToTop'
 import WhatsAppButton from './components/WhatsAppButton'
-import { Container } from 'react-bootstrap'
+import { Alert, Button, Container, Modal } from 'react-bootstrap'
 import Apartemenlogo from './assets/Apartemen logo.png?url'
 import AboutUsLogo from './assets/About Us logo.png?url'
 import Fasilitaslogo from './assets/Facilities logo.png?url'
 
 function HomePage() {
+  const [logoutFlash, setLogoutFlash] = useState('')
+
+  useEffect(() => {
+    const msg = sessionStorage.getItem('logoutFlash')
+    if (msg) {
+      setLogoutFlash(String(msg))
+      sessionStorage.removeItem('logoutFlash')
+    }
+  }, [])
+
   const cards = [
     {
       href: '/apartments',
@@ -56,7 +67,15 @@ function HomePage() {
   return (
     <>
       <div>
-        <Navbar />
+        {logoutFlash && (
+          <div className="px-3 pt-3">
+            <Container className="px-3">
+              <Alert variant="success" dismissible onClose={() => setLogoutFlash('')} className="mb-0">
+                {logoutFlash}
+              </Alert>
+            </Container>
+          </div>
+        )}
         <HeroCarousel />
         
         <section className="py-12 bg-white">
@@ -108,13 +127,77 @@ function ApartmentsPage() {
 
 function App() {
   const location = useLocation()
+  const navigate = useNavigate()
   const isAdminPage = location.pathname.startsWith('/admin')
   const isApartmentDetailPage = location.pathname.startsWith('/apartment/')
   const isAuthPage = location.pathname === '/login' || location.pathname === '/register'
+  const showPublicNavbar = !isAdminPage && !isAuthPage
+
+  const [showLogoutSuccessModal, setShowLogoutSuccessModal] = useState(false)
+
+  useEffect(() => {
+    const key = 'logoutFeedbackPending'
+
+    const openIfPending = () => {
+      if (sessionStorage.getItem(key) === '1') {
+        setShowLogoutSuccessModal(true)
+      }
+    }
+
+    openIfPending()
+
+    const handler = () => openIfPending()
+    window.addEventListener('samesta:logout-success', handler)
+    return () => window.removeEventListener('samesta:logout-success', handler)
+  }, [])
+
+  const handleLogoutModalClose = () => {
+    sessionStorage.removeItem('logoutFeedbackPending')
+    setShowLogoutSuccessModal(false)
+    navigate('/', { replace: true })
+  }
 
   return (
     <>
       <ScrollToTop />
+
+      <Modal
+        show={showLogoutSuccessModal}
+        onHide={handleLogoutModalClose}
+        centered
+        backdrop="static"
+        keyboard={false}
+      >
+        <Modal.Body className="text-center p-5">
+          <div className="mb-4">
+            <div
+              style={{
+                width: '80px',
+                height: '80px',
+                borderRadius: '50%',
+                background: '#28a745',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto',
+                fontSize: '40px',
+                color: 'white',
+              }}
+            >
+              OK
+            </div>
+          </div>
+          <h3 className="fw-bold mb-3">Logout Berhasil!</h3>
+          <p className="text-muted mb-4">
+            Anda telah berhasil logout dari akun Anda. Anda dapat login kembali kapan saja.
+          </p>
+          <Button variant="dark" size="lg" onClick={handleLogoutModalClose} className="px-5">
+            Kembali ke Beranda
+          </Button>
+        </Modal.Body>
+      </Modal>
+
+      {showPublicNavbar && <Navbar />}
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/apartments" element={<ApartmentsPage />} />
@@ -125,6 +208,7 @@ function App() {
         <Route path="/promo" element={<Promo />} />
         <Route path="/inquiry" element={<Inquiry />} />
         <Route path="/payments" element={<Payments />} />
+        <Route path="/payment-history" element={<PaymentHistory />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/admin/login" element={<AdminLogin />} />

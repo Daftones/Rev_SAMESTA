@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Container,
@@ -10,8 +10,8 @@ import {
   Alert,
   Modal,
 } from "react-bootstrap";
-import Navbar from "../components/Navbar";
-import { authAPI, inquiriesAPI, unitTypesAPI, unitsAPI } from "../services/api";
+import { authAPI, inquiriesAPI, unitTypesAPI } from "../services/api";
+import { buildUnitNumberMap, formatUnitNumber } from "../utils/unitNaming";
 
 function Inquiry() {
   const navigate = useNavigate();
@@ -26,14 +26,11 @@ function Inquiry() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loadingSelectedUnit, setLoadingSelectedUnit] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState(null);
-  const [resolvingUnitId, setResolvingUnitId] = useState(false);
-  const [resolvedUnitId, setResolvedUnitId] = useState("");
+  const [selectedUnitNumber, setSelectedUnitNumber] = useState(null);
 
   const unitIdFromUrl = (() => {
     const params = new URLSearchParams(location.search || "");
     return (
-      params.get("unit_type_id") ||
-      params.get("unitTypeId") ||
       params.get("unit_id") ||
       params.get("unitId") ||
       params.get("apartment_id") ||
@@ -43,25 +40,10 @@ function Inquiry() {
   })();
 
   const fixedUnitId = (() => {
-    const fromState = (() => {
-      if (!location.state || typeof location.state !== "object") return "";
-      const s = location.state;
-
-      return (
-        s.unitTypeId ||
-        s.unit_type_id ||
-        s.unitId ||
-        s.unit_id ||
-        s.apartmentId ||
-        s.apartment_id ||
-        s.id ||
-        s.unit?.unit_type_id ||
-        s.unit?.id ||
-        s.apartment?.unit_type_id ||
-        s.apartment?.id ||
-        ""
-      );
-    })();
+    const fromState =
+      location.state && typeof location.state === "object"
+        ? location.state.unitId || location.state.unit_id || ""
+        : "";
     return String(fromState || unitIdFromUrl || "").trim();
   })();
 
@@ -115,7 +97,6 @@ function Inquiry() {
     if (!raw) return null;
     return {
       id: raw.id || raw.inquiry_id || raw.uuid || raw._id || Date.now(),
-      userId: raw.user_id || raw.userId || raw.user_identifier || "",
       unitId: raw.unit_id || raw.unitId || "",
       purchaseType: raw.purchase_type || raw.purchaseType || "rent",
       address: raw.address || "",
@@ -136,6 +117,7 @@ function Inquiry() {
     const user = localStorage.getItem("user");
 
     if (!token || !user) {
+      if (sessionStorage.getItem('logoutFeedbackPending') === '1') return;
       // Save current path to redirect back after login
       sessionStorage.setItem(
         "redirectAfterLogin",
@@ -169,7 +151,7 @@ function Inquiry() {
           videoRef.current.srcObject = mediaStream;
         }
       }, 100);
-    } catch {
+    } catch (error) {
       showAlertMessage(
         "Tidak dapat mengakses kamera. Pastikan izin kamera diaktifkan.",
         "danger"
@@ -178,28 +160,31 @@ function Inquiry() {
   };
 
   const capturePhoto = () => {
-  if (videoRef.current && canvasRef.current) {
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
+    if (videoRef.current && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
 
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Ambil Base64 langsung dari canvas
-    const base64Image = canvas.toDataURL("image/jpeg", 0.95);
-
-    setFormData((prev) => ({
-      ...prev,
-      idCardPhoto: base64Image, // âœ… Base64 string
-    }));
-
-    setPhotoPreview(base64Image);
-    stopCamera();
-  }
-};
+      canvas.toBlob(
+        (blob) => {
+          const file = new File([blob], "id-card.jpg", { type: "image/jpeg" });
+          setFormData((prev) => ({
+            ...prev,
+            idCardPhoto: file,
+          }));
+          setPhotoPreview(canvas.toDataURL("image/jpeg"));
+          stopCamera();
+        },
+        "image/jpeg",
+        0.95
+      );
+    }
+  };
 
   const stopCamera = () => {
     if (stream) {
@@ -296,7 +281,7 @@ function Inquiry() {
         if (uid) setCurrentUserId(uid);
         // Prefer uid filter; fallback to email filter
         loadHistory(uid, resolvedEmail);
-      } catch {
+      } catch (err) {
         // If profile cannot be fetched, fallback to stored user (must still have an id)
         const uid =
           parsed?.id ?? parsed?.user_id ?? parsed?.userId ?? parsed?.uuid ?? "";
@@ -317,60 +302,34 @@ function Inquiry() {
       if (!fixedUnitId) return;
       setLoadingSelectedUnit(true);
       try {
-        const res = await unitTypesAPI.getOne(fixedUnitId);
-        const data = res?.data || res;
+        const [oneRes, allRes] = await Promise.all([
+          unitTypesAPI.getOne(fixedUnitId),
+          unitTypesAPI.getAll(),
+        ]);
+        const data = oneRes?.data || oneRes;
         setSelectedUnit(data);
+
+        const allList = Array.isArray(allRes?.data)
+          ? allRes.data
+          : Array.isArray(allRes)
+          ? allRes
+          : [];
+        const unitNumberMap = buildUnitNumberMap(allList, {
+          getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
+          getFloor: (x) => x?.floor,
+          getName: (x) => x?.name,
+        });
+        setSelectedUnitNumber(unitNumberMap[String(fixedUnitId ?? "").trim()] || null);
       } catch (err) {
         console.error("Gagal memuat detail unit untuk inquiry", err);
         setSelectedUnit(null);
+        setSelectedUnitNumber(null);
       } finally {
         setLoadingSelectedUnit(false);
       }
     };
 
     loadSelectedUnit();
-  }, [fixedUnitId]);
-
-  useEffect(() => {
-    const resolveUnitId = async () => {
-      if (!fixedUnitId) {
-        setResolvedUnitId("");
-        return;
-      }
-
-      setResolvingUnitId(true);
-      try {
-        const res = await unitsAPI.getAll();
-        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
-
-        const target = String(fixedUnitId).trim();
-        const pickId = (u) => String(u?.id ?? u?.unit_id ?? u?.unitId ?? u?.uuid ?? "").trim();
-        const pickTypeId = (u) =>
-          String(
-            u?.unit_type_id ??
-              u?.unitTypeId ??
-              u?.unit_type ??
-              u?.unitType ??
-              u?.type_id ??
-              ""
-          ).trim();
-
-        // Accept either: fixedUnitId is already a unit id, OR it's a unit_type id.
-        const byId = list.find((u) => pickId(u) && pickId(u) === target);
-        const byType = list.find((u) => pickTypeId(u) && pickTypeId(u) === target);
-        const chosen = byId || byType || null;
-        const chosenId = chosen ? pickId(chosen) : "";
-
-        setResolvedUnitId(chosenId);
-      } catch (err) {
-        console.error("Gagal memetakan unit_id untuk inquiry", err);
-        setResolvedUnitId("");
-      } finally {
-        setResolvingUnitId(false);
-      }
-    };
-
-    resolveUnitId();
   }, [fixedUnitId]);
 
   useEffect(() => {
@@ -411,7 +370,6 @@ function Inquiry() {
       );
       return;
     }
-    console.log (formData.idCardPhoto);
 
     const effectiveUserId =
       currentUser?.id ?? currentUser?.user_id ?? currentUserId ?? "";
@@ -431,22 +389,12 @@ function Inquiry() {
       return;
     }
 
-    if (!resolvedUnitId) {
-      showAlertMessage(
-        "Unit ID tidak valid di backend. Silakan coba lagi atau hubungi admin untuk sinkronisasi data unit.",
-        "danger"
-      );
-      return;
-    }
-
     const normalizedUserId = Number.isFinite(Number(effectiveUserId))
       ? Number(effectiveUserId)
       : effectiveUserId;
     const payload = {
       user_id: normalizedUserId,
-      unit_id: resolvedUnitId,
-      // Keep unit_type_id as extra context (some backends use it even if validation is on unit_id)
-      unit_type_id: fixedUnitId,
+      unit_id: fixedUnitId,
       purchase_type: formData.purchaseType,
       address: formData.address,
       // Backend expects `identity_card` (required)
@@ -495,7 +443,6 @@ function Inquiry() {
 
   return (
     <>
-      <Navbar />
       <div className="bg-slate-50 min-h-screen">
         <Container className="py-5 px-3">
           <Row className="justify-content-center">
@@ -508,6 +455,13 @@ function Inquiry() {
                       Lengkapi data di bawah untuk melanjutkan proses
                     </p>
                   </div>
+
+                  {(selectedUnit?.name || selectedUnitNumber) && (
+                    <Alert variant="info" className="rounded-2xl border border-slate-200">
+                      <strong>Unit:</strong>{" "}
+                      {selectedUnitNumber ? `Unit ${formatUnitNumber(selectedUnitNumber)}` : "-"}
+                    </Alert>
+                  )}
 
                   {alert.show && (
                     <Alert
@@ -708,13 +662,9 @@ function Inquiry() {
                           type="submit"
                           size="lg"
                           className="rounded-full"
-                          disabled={submitting || resolvingUnitId || !resolvedUnitId}
+                          disabled={submitting}
                         >
-                          {resolvingUnitId
-                            ? "Menyiapkan unit..."
-                            : submitting
-                            ? "Mengirim..."
-                            : "Kirim Inquiry"}
+                          {submitting ? "Mengirim..." : "Kirim Inquiry"}
                         </Button>
                         <Button
                           variant="outline-secondary"
@@ -870,8 +820,7 @@ function Inquiry() {
           </div>
           <h3 className="fw-bold mb-3">Inquiry Berhasil Dikirim!</h3>
           <p className="text-muted mb-4">
-            Terima kasih telah mengirimkan inquiry Anda. Tim kami akan segera
-            menghubungi Anda untuk proses lebih lanjut.
+            Terima kasih telah mengirimkan inquiry Anda.Silakan lanjutkan ke pembayaran.
           </p>
           <Button
             variant="dark"

@@ -505,31 +505,25 @@ function AdminInquiries() {
       </div>
 
       {/* Detail Modal */}
-      {/* ================= DETAIL MODAL ================= */}
       <Modal show={showModal} onHide={handleCloseModal} size="lg" centered>
         <Modal.Header closeButton>
           <Modal.Title>Detail Inquiry</Modal.Title>
         </Modal.Header>
-
         <Modal.Body className="max-h-[70vh] overflow-y-auto">
           {selectedInquiry && (
-            <>
-              {/* ================= INFORMASI CUSTOMER ================= */}
+            <div>
               <Card className="mb-3">
                 <Card.Body>
                   <h5 className="mb-3">Informasi Customer</h5>
-
-                  <Row className="mb-2 gy-2">
+                  <Row className="mb-2 gy-2 align-items-start">
                     <Col xs={12} sm={4}><strong>User ID / NIK:</strong></Col>
                     <Col xs={12} sm={8}>{selectedInquiry.userId}</Col>
                   </Row>
-
-                  <Row className="mb-2 gy-2">
+                  <Row className="mb-2 gy-2 align-items-start">
                     <Col xs={12} sm={4}><strong>Unit ID:</strong></Col>
                     <Col xs={12} sm={8}>{selectedInquiry.unitId}</Col>
                   </Row>
-
-                  <Row className="mb-2 gy-2">
+                  <Row className="mb-2 gy-2 align-items-start">
                     <Col xs={12} sm={4}><strong>Tipe Transaksi:</strong></Col>
                     <Col xs={12} sm={8}>
                       <Badge bg={selectedInquiry.purchaseType === 'rent' ? 'info' : 'primary'}>
@@ -537,106 +531,96 @@ function AdminInquiries() {
                       </Badge>
                     </Col>
                   </Row>
-
-                  <Row className="mb-2 gy-2">
+                  <Row className="mb-2 gy-2 align-items-start">
                     <Col xs={12} sm={4}><strong>Alamat:</strong></Col>
                     <Col xs={12} sm={8}>{selectedInquiry.address}</Col>
                   </Row>
-
-                  <Row className="gy-2">
+                  <Row className="gy-2 align-items-start">
                     <Col xs={12} sm={4}><strong>Tanggal:</strong></Col>
                     <Col xs={12} sm={8}>{formatDate(selectedInquiry.createdAt)}</Col>
                   </Row>
                 </Card.Body>
               </Card>
 
-              {/* ================= FOTO KTP ================= */}
-              <Card>
+              <Card className="mb-3">
                 <Card.Body>
                   <h5 className="mb-3">Foto KTP</h5>
-
-                  {(() => {
-                    const normalizeBase64 = (value) => {
-                      if (!value) return null
-
-                      // sudah benar (OPS I B)
-                      if (value.startsWith('data:image')) return value
-
-                      // masih keprefix URL API → potong
-                      const idx = value.indexOf('data:image')
-                      if (idx !== -1) {
-                        return value.slice(idx)
-                      }
-
-                      // base64 polos
-                      return `data:image/jpeg;base64,${value}`
-                    }
-
-                    if (Array.isArray(selectedInquiry.idCardPhotos) && selectedInquiry.idCardPhotos.length > 0) {
-                      return (
-                        <div className="d-flex flex-column gap-3">
-                          {selectedInquiry.idCardPhotos.map((src, idx) => (
-                            src ? (
-                              <img
-                                key={idx}
-                                src={normalizeBase64(src)}
-                                alt={`KTP ${idx + 1}`}
-                                className="img-fluid rounded shadow"
-                                style={{
-                                  maxHeight: '16.25rem',
-                                  width: '100%',
-                                  objectFit: 'contain'
-                                }}
-                                loading="lazy"
-                              />
-                            ) : (
-                              <div key={idx} className="alert alert-warning mb-0">
-                                Foto {idx + 1} kosong
+                  {Array.isArray(selectedInquiry.idCardPhotos) && selectedInquiry.idCardPhotos.length > 0 ? (
+                    <div className="d-flex flex-column gap-2">
+                      {selectedInquiry.idCardPhotos.map((src, idx) => (
+                        src ? (
+                          <div key={idx} className="position-relative">
+                            <img
+                              src={src}
+                              alt={`KTP ${idx + 1}`}
+                              className="img-fluid rounded shadow"
+                              style={{ maxHeight: '16.25rem', width: '100%', objectFit: 'contain' }}
+                              crossOrigin="anonymous"
+                              onError={(e) => handleImageError(e, src)}
+                              loading="lazy"
+                            />
+                            {imageErrors.has(src) && (
+                              <div className="alert alert-danger mt-2 mb-0">
+                                <div className="fw-bold">⚠️ Gagal memuat gambar</div>
+                                <small className="text-break">
+                                  <strong>URL:</strong> {src || '(URL kosong)'}<br/>
+                                  <strong>Base API:</strong> {import.meta.env.VITE_API_BASE_URL}<br/>
+                                  <div className="mt-1">
+                                    <a href={src} target="_blank" rel="noreferrer" className="text-decoration-underline">
+                                      Coba buka di tab baru
+                                    </a>
+                                  </div>
+                                </small>
                               </div>
-                            )
-                          ))}
+                            )}
+                          </div>
+                        ) : (
+                          <div key={idx} className="alert alert-warning mb-0">
+                            <small>⚠️ URL gambar kosong untuk foto {idx + 1}</small>
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  ) : selectedInquiry.idCardPhoto ? (
+                    <div className="position-relative">
+                      <img
+                        src={selectedInquiry.idCardPhoto}
+                        alt="KTP"
+                        className="img-fluid rounded shadow"
+                        style={{ maxHeight: '16.25rem', width: '100%', objectFit: 'contain' }}
+                        crossOrigin="anonymous"
+                        onError={(e) => handleImageError(e, selectedInquiry.idCardPhoto)}
+                        loading="lazy"
+                      />
+                      {imageErrors.has(selectedInquiry.idCardPhoto) && (
+                        <div className="alert alert-danger mt-2 mb-0">
+                          <div className="fw-bold">⚠️ Gagal memuat gambar</div>
+                          <small className="text-break">
+                            <strong>URL:</strong> {selectedInquiry.idCardPhoto || '(URL kosong)'}<br/>
+                            <strong>Base API:</strong> {import.meta.env.VITE_API_BASE_URL}<br/>
+                            <div className="mt-1">
+                              <a href={selectedInquiry.idCardPhoto} target="_blank" rel="noreferrer" className="text-decoration-underline">
+                                Coba buka di tab baru
+                              </a>
+                            </div>
+                          </small>
                         </div>
-                      )
-                    }
-
-                    if (selectedInquiry.idCardPhoto) {
-                      return (
-                        <img
-                          src={normalizeBase64(selectedInquiry.idCardPhoto)}
-                          alt="KTP"
-                          className="img-fluid rounded shadow"
-                          style={{
-                            maxHeight: '16.25rem',
-                            width: '100%',
-                            objectFit: 'contain'
-                          }}
-                          loading="lazy"
-                        />
-                      )
-                    }
-
-                    return <p className="text-muted">Tidak ada foto</p>
-                  })()}
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-muted">Tidak ada foto</p>
+                  )}
                 </Card.Body>
               </Card>
-            </>
+
+            </div>
           )}
         </Modal.Body>
-
         <Modal.Footer>
-          <Button
-            variant="outline-danger"
-            onClick={() => handleDelete(selectedInquiry.id)}
-            disabled={!!updatingId}
-          >
+          <Button variant="outline-danger" onClick={() => handleDelete(selectedInquiry.id)} disabled={!!updatingId}>
             {updatingId ? 'Menghapus...' : 'Hapus Inquiry'}
           </Button>
-
-          <Button
-            variant="secondary"
-            onClick={handleCloseModal}
-            disabled={!!updatingId}
-          >
+          <Button variant="secondary" onClick={handleCloseModal} disabled={!!updatingId}>
             Tutup
           </Button>
         </Modal.Footer>

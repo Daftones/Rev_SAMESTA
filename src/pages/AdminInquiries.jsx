@@ -622,8 +622,20 @@ function AdminInquiries() {
                     </Badge>
                   </td>
                   <td>
-                    <Badge bg={inquiry.status === 'rejected' ? 'danger' : 'primary'}>
-                      {inquiry.status === 'approved' ? 'Diterima' : 'Ditolak'}
+                    <Badge
+                      bg={
+                        inquiry.status === 'approved'
+                          ? 'success'
+                          : inquiry.status === 'rejected'
+                          ? 'danger'
+                          : 'secondary' // ⬅️ abu-abu
+                      }
+                    >
+                      {inquiry.status === 'approved'
+                        ? 'Disetujui'
+                        : inquiry.status === 'rejected'
+                        ? 'Ditolak'
+                        : 'Terkirim'}
                     </Badge>
                   </td>
                   <td>{formatDate(inquiry.createdAt)}</td>

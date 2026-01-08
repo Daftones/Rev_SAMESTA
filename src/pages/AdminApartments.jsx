@@ -170,6 +170,7 @@ function AdminApartments() {
       const response = await unitTypesAPI.getAll()
       const list = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : []
       setApartments(list)
+      console.log (list);
     } catch (error) {
       console.error('Error fetching apartments:', error)
       showAlert('Gagal memuat data apartemen', 'danger')
@@ -178,12 +179,14 @@ function AdminApartments() {
     }
   }
 
+
   const handleShowModal = (apartment = null) => {
     if (apartment) {
       setEditMode(true)
       setCurrentApartment(apartment)
       setFormData({
         name: apartment.name || '',
+        unit_number: apartment.unit_number || '',
         floor: apartment.floor || '',
         size: apartment.size || '',
         rent_price: apartment.rent_price || '',
@@ -193,6 +196,7 @@ function AdminApartments() {
       })
       setInitialFormData({
         name: apartment.name || '',
+        unit_number: apartment.unit_number || '',
         floor: apartment.floor || '',
         size: apartment.size || '',
         rent_price: apartment.rent_price || '',
@@ -205,6 +209,7 @@ function AdminApartments() {
       setCurrentApartment(null)
       setFormData({
         name: '',
+        unit_number: '',
         floor: '',
         size: '',
         rent_price: '',
@@ -245,6 +250,7 @@ function AdminApartments() {
     try {
       const basePayload = {
         name: formData.name,
+        unit_number: formData.unit_number,
         floor: formData.floor,
         size: formData.size,
         rent_price: formData.rent_price || null,
@@ -258,6 +264,7 @@ function AdminApartments() {
         initialFormData &&
         String(initialFormData.status || '') !== String(formData.status || '') &&
         String(initialFormData.name || '') === String(formData.name || '') &&
+         String(initialFormData.unit_number || '') === String(formData.unit_number || '') &&
         String(initialFormData.floor || '') === String(formData.floor || '') &&
         String(initialFormData.size || '') === String(formData.size || '') &&
         String(initialFormData.rent_price || '') === String(formData.rent_price || '') &&
@@ -427,8 +434,8 @@ function AdminApartments() {
         <Table hover responsive className="mb-0 align-middle">
           <thead className="bg-slate-900 text-white">
             <tr>
-              <th>#</th>
-              <th>Unit</th>
+              <th>Nomor Unit</th>
+              <th>Jenis Unit</th>
               <th>Lantai</th>
               <th>Size</th>
               <th>Status</th>
@@ -455,8 +462,8 @@ function AdminApartments() {
             ) : (
               pagedApartments.map((apartment, index) => (
                 <tr key={getApartmentId(apartment) || index}>
-                  <td>{(clampedPage - 1) * pageSize + index + 1}</td>
-                  <td>{getApartmentDisplayName(apartment)}</td>
+                  <td>{apartment.unit_number}</td>
+                  <td>{apartment.name}</td>
                   <td>{apartment.floor}</td>
                   <td>{apartment.size}</td>
                   <td>{getStatusBadge(apartment.status)}</td>

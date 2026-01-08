@@ -6,18 +6,46 @@ import { unitTypesAPI } from '../services/api'
 // Import gambar apartemen
 import studioImg from '../assets/Studio room.png'
 import twoBedImg from '../assets/2 bedroom.png'
-import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
 
 function ApartmentList({ filters: initialFilters }) {
   const navigate = useNavigate()
   const [raw, setRaw] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [filters, setFilters] = useState(initialFilters || { preference: 'sewa', roomType: 'studio', floor: 'semua' })
+
+  const [filters, setFilters] = useState(
+    initialFilters || { preference: 'sewa', roomType: 'studio', floor: 'semua', furnishType: '', }
+  )
+
+  const detectFurnishType = (item) => {
+  const name = (item.name || '').toLowerCase()
+  const facilities = (item.facilities || '').toLowerCase()
+
+  // PRIORITAS SESUAI DB
+  if (name.includes('kosongan')) return 'non-furnish'
+  if (name.includes('kipas') || facilities.includes('kipas')) return 'furnish-kipas'
+  if (name.includes('ac') || facilities.includes(' ac')) return 'furnish-ac'
+  return 'unknown'
+}
+
+  const showPriceSorter =
+    filters.preference === 'sewa' &&
+    filters.furnishType === ''
+
   const [sortOption, setSortOption] = useState('price-asc')
   const [floors, setFloors] = useState([])
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(12)
+
+  /* 🔑 SINKRON FILTER DARI ApartmentFilter */
+  useEffect(() => {
+    if (initialFilters) {
+      setFilters((prev) => ({
+        ...prev,
+        ...initialFilters,
+      }))
+    }
+  }, [initialFilters])
 
   useEffect(() => {
     const mql = window.matchMedia('(max-width: 767px)')
@@ -39,7 +67,6 @@ function ApartmentList({ filters: initialFilters }) {
     return () => mql.removeListener(onChange)
   }, [])
 
-  // Helper function untuk mendapatkan gambar sesuai tipe
   const getApartmentImage = (type) => {
     return type === 'studio' ? studioImg : twoBedImg
   }
@@ -50,14 +77,22 @@ function ApartmentList({ filters: initialFilters }) {
       setError(null)
       try {
         const res = await unitTypesAPI.getAll()
-        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+        const list = Array.isArray(res?.data)
+          ? res.data
+          : Array.isArray(res)
+          ? res
+          : res?.data
+          ? [res.data]
+          : []
+
         setRaw(list)
-        
-        // Extract unique floors for dropdown
-        const nums = list
-          .map((item) => Number(item.floor))
-          .filter((n) => Number.isFinite(n))
-        const unique = Array.from(new Set(nums)).sort((a, b) => a - b)
+
+        const unique = [
+          ...new Set(
+            list.map((item) => Number(item.floor)).filter(Number.isFinite)
+          ),
+        ].sort((a, b) => a - b)
+
         setFloors(unique)
       } catch (err) {
         console.error('Failed to load unit types', err)
@@ -75,7 +110,7 @@ function ApartmentList({ filters: initialFilters }) {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
-      minimumFractionDigits: 0
+      minimumFractionDigits: 0,
     }).format(numeric)
   }
 
@@ -98,92 +133,95 @@ function ApartmentList({ filters: initialFilters }) {
   }
 
   const apartments = useMemo(() => {
-    const unitNumberMap = buildUnitNumberMap(raw, {
-      getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
-      getFloor: (x) => x?.floor,
-      getName: (x) => x?.name,
-    })
-
     return raw.map((item) => {
       const type = item.name?.toLowerCase().includes('studio') ? 'studio' : 'twoBed'
       const floor = Number(item.floor)
       const facilities = item.facilities
         ? item.facilities.split(',').map((f) => f.trim()).filter(Boolean)
         : []
-      const sizeValue = Number.parseFloat(item.size)
-
-      const id = item.unit_type_id || item.id
-      const unitNumber = unitNumberMap[String(id ?? '').trim()] || null
 
       return {
-        id,
+        id: item.unit_type_id || item.id,
         name: item.name,
-        displayName: unitNumber ? `Unit ${formatUnitNumber(unitNumber)}` : (item.name || '-'),
-        unitNumber,
+        unit_number: item.unit_number,
         type,
         floor: Number.isNaN(floor) ? null : floor,
         size: item.size ? `${item.size} m²` : '-',
-        sizeValue: Number.isFinite(sizeValue) ? sizeValue : null,
         rentPrice: item.rent_price,
         salePrice: item.sale_price,
         status: normalizeStatus(item.status),
         facilities,
+        furnishType: detectFurnishType(item),
       }
     })
   }, [raw])
 
   const filteredApartments = useMemo(() => {
-    const filtered = apartments.filter((apt) => {
-      // Filter berdasarkan ketersediaan harga sesuai preference
-      if (filters.preference === 'sewa') {
-        if (!apt.rentPrice || Number(apt.rentPrice) <= 0) return false
-      } else if (filters.preference === 'beli') {
-        if (!apt.salePrice || Number(apt.salePrice) <= 0) return false
-      }
-      
+    let result = apartments.filter((apt) => {
+      if (filters.preference === 'sewa' && (!apt.rentPrice || apt.rentPrice <= 0)) return false
+      if (filters.preference === 'beli' && (!apt.salePrice || apt.salePrice <= 0)) return false
+
       if (filters.roomType && apt.type !== filters.roomType) return false
       if (filters.floor !== 'semua' && apt.floor !== Number(filters.floor)) return false
+
+      if (
+        filters.preference === 'sewa' &&
+        filters.furnishType &&
+        apt.furnishType !== filters.furnishType
+      ) {
+        return false
+      }
+
       return true
     })
 
-    const priceKey = filters.preference === 'beli' ? 'salePrice' : 'rentPrice'
+    // 🔥 SORTING – HANYA JIKA SEMUA TIPE FURNISH
+    if (
+      filters.preference === 'sewa' &&
+      filters.furnishType === '' &&
+      sortOption
+    ) {
+      result = [...result].sort((a, b) => {
+        const priceA = Number(a.rentPrice)
+        const priceB = Number(b.rentPrice)
 
-    return filtered.sort((a, b) => {
-      const [field, direction] = sortOption.split('-')
-      const dir = direction === 'desc' ? -1 : 1
-      const fallback = direction === 'desc' ? -Infinity : Infinity
+        if (!Number.isFinite(priceA)) return 1
+        if (!Number.isFinite(priceB)) return -1
 
-      const pick = () => {
-        if (field === 'price') return { a: Number(a[priceKey]), b: Number(b[priceKey]) }
-        if (field === 'floor') return { a: a.floor, b: b.floor }
-        if (field === 'size') return { a: a.sizeValue, b: b.sizeValue }
-        return { a: 0, b: 0 }
-      }
+        if (sortOption === 'price-asc') {
+          return priceA - priceB
+        }
 
-      const raw = pick()
-      const valA = Number.isFinite(raw.a) ? raw.a : fallback
-      const valB = Number.isFinite(raw.b) ? raw.b : fallback
-      if (valA === valB) return 0
-      return valA > valB ? dir : -dir
-    })
+        if (sortOption === 'price-desc') {
+          return priceB - priceA
+        }
+
+        return 0
+      })
+    }
+
+    return result
   }, [apartments, filters, sortOption])
 
   useEffect(() => {
-    setPage(1)
-  }, [filters, sortOption])
+    if (
+      filters.preference === 'sewa' &&
+      filters.furnishType !== ''
+    ) {
+      setSortOption('price-asc') // atau null jika mau
+    }
+  }, [filters.furnishType, filters.preference])
 
-  const pageCount = useMemo(() => {
-    return Math.max(1, Math.ceil(filteredApartments.length / pageSize))
-  }, [filteredApartments.length, pageSize])
 
   useEffect(() => {
-    if (page > pageCount) setPage(pageCount)
-  }, [page, pageCount])
+    setPage(1)
+  }, [filters])
 
-  const pagedApartments = useMemo(() => {
-    const start = (page - 1) * pageSize
-    return filteredApartments.slice(start, start + pageSize)
-  }, [filteredApartments, page, pageSize])
+  const pageCount = Math.max(1, Math.ceil(filteredApartments.length / pageSize))
+  const pagedApartments = filteredApartments.slice(
+    (page - 1) * pageSize,
+    page * pageSize
+  )
 
   const toggleFilter = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
@@ -262,23 +300,41 @@ function ApartmentList({ filters: initialFilters }) {
                   </Form.Select>
                 </Form.Group>
               </Col>
-              <Col xs={12} md={6} lg={4}>
-                <Form.Group>
-                  <Form.Label className="fw-bold text-slate-800">Urutkan</Form.Label>
-                  <Form.Select
-                    className="rounded-xl border-slate-200 focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                    value={sortOption}
-                    onChange={(e) => setSortOption(e.target.value)}
-                  >
-                    <option value="price-asc">Harga termurah</option>
-                    <option value="price-desc">Harga termahal</option>
-                    <option value="floor-asc">Lantai terendah</option>
-                    <option value="floor-desc">Lantai tertinggi</option>
-                    <option value="size-asc">Luas terkecil</option>
-                    <option value="size-desc">Luas terbesar</option>
-                  </Form.Select>
-                </Form.Group>
-              </Col>
+              {filters.preference === 'sewa' && (
+                <Col xs={12} md={6} lg={4}>
+                  <Form.Group>
+                    <Form.Label className="fw-bold text-slate-800">
+                      Tipe Furnish
+                    </Form.Label>
+                    <Form.Select
+                      className="rounded-xl border-slate-200 focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                      value={filters.furnishType || ''}
+                      onChange={(e) => toggleFilter('furnishType', e.target.value)}
+                    >
+                      <option value="">Semua Tipe</option>
+                      <option value="non-furnish">Non-Furnish</option>
+                      <option value="furnish-kipas">Furnish + Kipas</option>
+                      <option value="furnish-ac">Furnish + AC</option>
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+              )}
+              {showPriceSorter && (
+                <Col xs={12} md={6} lg={4}>
+                  <Form.Group>
+                    <Form.Label className="fw-bold text-slate-800">
+                      Urutkan Harga
+                    </Form.Label>
+                    <Form.Select
+                      value={sortOption}
+                      onChange={(e) => setSortOption(e.target.value)}
+                    >
+                      <option value="price-asc">Harga Termurah</option>
+                      <option value="price-desc">Harga Termahal</option>
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+              )}
             </Row>
           </div>
 
@@ -319,7 +375,7 @@ function ApartmentList({ filters: initialFilters }) {
                       </span>
                     </div>
                     <Card.Body className="d-flex flex-column gap-3 flex-grow-1 p-4">
-                      <h3 className="text-xl font-semibold text-slate-900 break-words text-truncate" title={apt.displayName}>{apt.displayName}</h3>
+                      <h3 className="text-xl font-semibold text-slate-900 break-words text-truncate" title={apt.unit_number}>Unit {apt.unit_number}</h3>
                       <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
                         <span>📐 {apt.size}</span>
                         <span>🏢 Lantai {apt.floor ?? '-'}</span>

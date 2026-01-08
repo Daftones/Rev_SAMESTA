@@ -11,7 +11,6 @@ import twoBedImg from '../assets/2 bedroom.png'
 import twoBed1Img from '../assets/2br(1).jpeg'
 import twoBed2Img from '../assets/2br(2).jpeg'
 import floorPlanImg from '../assets/floor_plan.jpeg'
-import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
 
 function ApartmentDetail() {
   const { id } = useParams()
@@ -26,7 +25,6 @@ function ApartmentDetail() {
 
   const [selectedImage, setSelectedImage] = useState(0)
   const [apartment, setApartment] = useState(null)
-  const [unitNumber, setUnitNumber] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -43,21 +41,12 @@ function ApartmentDetail() {
       setLoading(true)
       setError(null)
       try {
-        const [oneRes, allRes] = await Promise.all([
+        const [oneRes] = await Promise.all([
           unitTypesAPI.getOne(id),
           unitTypesAPI.getAll(),
         ])
         const data = oneRes?.data || oneRes
-        setApartment(data)
-
-        const allList = Array.isArray(allRes?.data) ? allRes.data : Array.isArray(allRes) ? allRes : []
-        const unitNumberMap = buildUnitNumberMap(allList, {
-          getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
-          getFloor: (x) => x?.floor,
-          getName: (x) => x?.name,
-        })
-        const resolved = unitNumberMap[String(id ?? '').trim()] || null
-        setUnitNumber(resolved)
+        setApartment(data)  
       } catch (err) {
         console.error('Failed to load apartment detail', err)
         setError('Gagal memuat detail apartemen')
@@ -157,6 +146,7 @@ function ApartmentDetail() {
     const unitTypeId = String(apartment?.unit_type_id || apartment?.id || id || '').trim()
     navigate(`/inquiry?unit_type_id=${encodeURIComponent(unitTypeId)}`, { state: { unitTypeId } })
   }
+  
   const handleContactAdmin = () => window.open('https://wa.me/6289506516117?text=Halo, saya ingin info lebih lanjut tentang unit ini', '_blank')
 
   const handleFullscreen = () => {
@@ -220,12 +210,12 @@ function ApartmentDetail() {
               <span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${statusBadgeClass(normalizeStatus(apartment.status))}`}>
                 {renderStatus(normalizeStatus(apartment.status))}
               </span>
-              <h1 className="mt-3 text-3xl font-bold text-slate-900 break-words">{unitNumber ? `Unit ${formatUnitNumber(unitNumber)}` : (apartment.name || 'Unit Apartemen')}</h1>
+              <h1 className="mt-3 text-3xl font-bold text-slate-900 break-words">{apartment.unit_number}</h1>
               <p className="text-slate-600">Samesta Jakabaring • Lantai {apartment.floor || '-'}</p>
 
               <div className="mt-2 text-slate-600">
                 <span className="fw-semibold text-slate-800">Tipe:</span>{' '}
-                {apartment.name?.toLowerCase().includes('studio') ? 'Studio' : '2 Bedroom'}
+                {apartment.name}
               </div>
 
               <div className="mt-6 text-lg font-semibold text-slate-900">Spesifikasi</div>

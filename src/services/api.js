@@ -164,6 +164,28 @@ const stripClientPricingFields = (payload) => {
 }
 
 const inquiriesAPI = {
+  approve: async (id) => {
+    try {
+      const response = await api.post(`/inquiry/approve/${id}`)
+      console.log('APPROVE RESPONSE:', response.data)
+      return response
+    } catch (error) {
+      console.error('APPROVE ERROR:', error.response?.data || error.message)
+      throw error
+    }
+  },
+
+reject: async (id) => {
+  try {
+    const response = await api.post(`/inquiry/reject/${id}`)
+    console.log('REJECT RESPONSE:', response.data)
+    return response
+  } catch (error) {
+    console.error('REJECT ERROR:', error.response?.data || error.message)
+    throw error
+  }
+},
+
   async getAll(params = {}) {
     const { data } = await api.get("/inquiry", { params });
     return data;

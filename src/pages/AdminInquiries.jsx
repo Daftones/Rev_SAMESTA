@@ -73,6 +73,8 @@ function AdminInquiries() {
 
   const normalizeInquiry = (raw) => {
     if (!raw) return null
+    console.log(`log raw`);
+    console.log(raw);
 
     const identityCard = raw.identity_card || raw.identityCard
     const identityCardList = Array.isArray(identityCard)
@@ -111,7 +113,27 @@ function AdminInquiries() {
       ),
       userIdentifier: raw.user_identifier || raw.userIdentifier || raw.email || '',
       unitId: raw.unit_id || raw.unitId,
-      unitTypeId: raw.unit_type_id || raw.unitTypeId || raw.unit_type || raw.unitType || '',
+      unit_name:
+        raw?.unit?.unit_type?.name ||
+        raw?.unit?.unitType?.name ||
+        raw?.unit_name ||
+        raw?.unitType?.name ||
+      '-',
+      floor:
+        raw?.unit?.floor ||
+        raw?.unit?.unit_type?.floor ||
+        raw?.floor ||
+      '-',
+      unitTypeId: raw?.unit?.unitType?.unit_type_id,
+      unit_number: raw.unit_number,
+      unitNumber:
+        unitNumberMap?.[
+          raw.unit_type_id || raw.unitTypeId || raw.unit_type || raw.unitType
+        ] ||
+        unitNumberMap?.[
+          raw.unit_id || raw.unitId
+        ] ||
+        null,
       purchaseType: raw.purchase_type || raw.purchaseType || 'rent',
       status: normalizeStatus(raw),
       address: raw.address || '',
@@ -156,7 +178,7 @@ function AdminInquiries() {
   const getInquiryUnitLabel = (inq) => {
     const byTypeId = String(inq?.unitTypeId || '').trim()
     const byUnitId = String(inq?.unitId || '').trim()
-
+ 
     const byTypeNumber = byTypeId ? unitNumberMap[byTypeId] : null
     if (byTypeNumber) return `Unit ${formatUnitNumber(byTypeNumber)}`
 
@@ -220,7 +242,7 @@ function AdminInquiries() {
         console.log('[loadInquiries] Sample raw inquiry:', list[0])
       }
       const normalized = list
-        .map(normalizeInquiry)
+        .map((raw) => normalizeInquiry(raw, nextUnitNumberMap))
         .filter(Boolean)
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       console.log('[loadInquiries] Normalized count:', normalized.length)
@@ -239,6 +261,51 @@ function AdminInquiries() {
   const handleViewDetails = (inquiry) => {
     setSelectedInquiry(inquiry)
     setShowModal(true)
+  }
+
+  const handleApprove = async (inquiryId) => {
+    setUpdatingId(inquiryId)
+    try {
+      const res = await inquiriesAPI.approve(inquiryId)
+
+      setInquiries((prev) =>
+        prev.map((inq) =>
+          inq.id === inquiryId
+            ? { ...inq, status: 'approved' }
+            : inq
+        )
+      )
+
+      handleCloseModal()
+    } catch (err) {
+      setError('Gagal menyetujui inquiry')
+    } finally {
+      setUpdatingId('')
+    }
+  }
+
+  const handleReject = async (inquiryId) => {
+    if (!window.confirm('Tolak inquiry ini?')) return
+
+    setUpdatingId(inquiryId)
+    try {
+      await inquiriesAPI.reject(inquiryId)
+
+      setInquiries((prev) =>
+        prev.map((inq) =>
+          inq.id === inquiryId
+            ? { ...inq, status: 'rejected' }
+            : inq
+        )
+      )
+
+      handleCloseModal()
+    } catch (err) {
+      setError('Gagal menolak inquiry')
+      console.log(err);
+    } finally {
+      setUpdatingId('')
+    }
   }
 
   const handleCloseModal = () => {
@@ -272,7 +339,9 @@ function AdminInquiries() {
     })
   }
 
-  const filteredInquiries = useMemo(() => {
+  const filteredInquiries = useMemo(
+    () => {
+      console.log(inquiries);
     return inquiries.filter((inq) => {
       if (filters.purchaseType !== 'all' && inq.purchaseType !== filters.purchaseType) return false
       if (filters.from && new Date(inq.createdAt) < new Date(filters.from)) return false
@@ -509,10 +578,11 @@ function AdminInquiries() {
         <Table hover responsive className="mb-0 align-middle">
           <thead className="bg-slate-900 text-white">
             <tr>
-              <th>#</th>
-              <th>User</th>
-              <th>Unit</th>
-              <th>Tipe</th>
+              <th>No.</th>
+              <th>Nama Lengkap</th>
+              <th>Unit yang dipesan</th>
+              <th>S / B</th>
+              <th>Status</th>
               <th>Tanggal</th>
               <th>Aksi</th>
             </tr>
@@ -541,7 +611,7 @@ function AdminInquiries() {
                     )}
                   </td>
                   <td>
-                    <div className="fw-semibold text-slate-900">{getInquiryUnitLabel(inquiry)}</div>
+                    <div className="fw-semibold text-slate-900">{(inquiry.unit_number)}</div>
                     {(String(inquiry?.unitId || '').trim() || String(inquiry?.unitTypeId || '').trim()) && (
                       <div className="text-muted small">ID: {String(inquiry.unitTypeId || inquiry.unitId || '')}</div>
                     )}
@@ -549,6 +619,11 @@ function AdminInquiries() {
                   <td>
                     <Badge bg={inquiry.purchaseType === 'rent' ? 'info' : 'primary'}>
                       {inquiry.purchaseType === 'rent' ? 'Sewa' : 'Beli'}
+                    </Badge>
+                  </td>
+                  <td>
+                    <Badge bg={inquiry.status === 'rejected' ? 'danger' : 'primary'}>
+                      {inquiry.status === 'approved' ? 'Diterima' : 'Ditolak'}
                     </Badge>
                   </td>
                   <td>{formatDate(inquiry.createdAt)}</td>
@@ -583,16 +658,24 @@ function AdminInquiries() {
               {/* ================= INFORMASI CUSTOMER ================= */}
               <Card className="mb-3">
                 <Card.Body>
-                  <h5 className="mb-3">Informasi Customer</h5>
-
                   <Row className="mb-2 gy-2">
-                    <Col xs={12} sm={4}><strong>Username:</strong></Col>
+                    <Col xs={12} sm={4}><strong>Nama Lengkap:</strong></Col>
                     <Col xs={12} sm={8}>{selectedInquiry.userName}</Col>
                   </Row>
 
                   <Row className="mb-2 gy-2">
-                    <Col xs={12} sm={4}><strong>Unit ID:</strong></Col>
-                    <Col xs={12} sm={8}>{selectedInquiry.unitId}</Col>
+                    <Col xs={12} sm={4}><strong>Tipe Unit:</strong></Col>
+                    <Col xs={12} sm={8}>{selectedInquiry.unit_name}</Col>
+                  </Row>
+
+                  <Row className="mb-2 gy-2">
+                    <Col xs={12} sm={4}><strong>Lantai:</strong></Col>
+                    <Col xs={12} sm={8}>{selectedInquiry.floor}</Col>
+                  </Row>
+
+                  <Row className="mb-2 gy-2">
+                    <Col xs={12} sm={4}><strong>Unit:</strong></Col>
+                    <Col xs={12} sm={8}>{selectedInquiry.unit_number}</Col>
                   </Row>
 
                   <Row className="mb-2 gy-2">
@@ -690,6 +773,25 @@ function AdminInquiries() {
         </Modal.Body>
 
         <Modal.Footer>
+          {selectedInquiry?.status === 'sent' && (
+            <>
+              <Button
+                variant="success"
+                onClick={() => handleApprove(selectedInquiry.id)}
+                disabled={!!updatingId}
+              >
+                Terima
+              </Button>
+
+              <Button
+                variant="danger"
+                onClick={() => handleReject(selectedInquiry.id)}
+                disabled={!!updatingId}
+              >
+                Tolak
+              </Button>
+            </>
+          )}
           <Button
             variant="outline-danger"
             onClick={() => handleDelete(selectedInquiry.id)}

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Container, Row, Col, Card, Spinner, Form, Button } from 'react-bootstrap'
+import { Container, Row, Col, Card, Spinner, Form, Button, Pagination } from 'react-bootstrap'
 import { useNavigate } from 'react-router-dom'
 import { unitTypesAPI } from '../services/api'
 
 // Import gambar apartemen
 import studioImg from '../assets/Studio room.png'
 import twoBedImg from '../assets/2 bedroom.png'
+import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
 
 function ApartmentList({ filters: initialFilters }) {
   const navigate = useNavigate()
@@ -15,6 +16,28 @@ function ApartmentList({ filters: initialFilters }) {
   const [filters, setFilters] = useState(initialFilters || { preference: 'sewa', roomType: 'studio', floor: 'semua' })
   const [sortOption, setSortOption] = useState('price-asc')
   const [floors, setFloors] = useState([])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(12)
+
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 767px)')
+
+    const sync = (matches) => {
+      setPageSize(matches ? 3 : 12)
+      setPage(1)
+    }
+
+    sync(mql.matches)
+
+    const onChange = (e) => sync(e.matches)
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', onChange)
+      return () => mql.removeEventListener('change', onChange)
+    }
+
+    mql.addListener(onChange)
+    return () => mql.removeListener(onChange)
+  }, [])
 
   // Helper function untuk mendapatkan gambar sesuai tipe
   const getApartmentImage = (type) => {
@@ -75,6 +98,12 @@ function ApartmentList({ filters: initialFilters }) {
   }
 
   const apartments = useMemo(() => {
+    const unitNumberMap = buildUnitNumberMap(raw, {
+      getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
+      getFloor: (x) => x?.floor,
+      getName: (x) => x?.name,
+    })
+
     return raw.map((item) => {
       const type = item.name?.toLowerCase().includes('studio') ? 'studio' : 'twoBed'
       const floor = Number(item.floor)
@@ -83,9 +112,14 @@ function ApartmentList({ filters: initialFilters }) {
         : []
       const sizeValue = Number.parseFloat(item.size)
 
+      const id = item.unit_type_id || item.id
+      const unitNumber = unitNumberMap[String(id ?? '').trim()] || null
+
       return {
-        id: item.unit_type_id || item.id,
+        id,
         name: item.name,
+        displayName: unitNumber ? `Unit ${formatUnitNumber(unitNumber)}` : (item.name || '-'),
+        unitNumber,
         type,
         floor: Number.isNaN(floor) ? null : floor,
         size: item.size ? `${item.size} m²` : '-',
@@ -133,6 +167,23 @@ function ApartmentList({ filters: initialFilters }) {
       return valA > valB ? dir : -dir
     })
   }, [apartments, filters, sortOption])
+
+  useEffect(() => {
+    setPage(1)
+  }, [filters, sortOption])
+
+  const pageCount = useMemo(() => {
+    return Math.max(1, Math.ceil(filteredApartments.length / pageSize))
+  }, [filteredApartments.length, pageSize])
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount)
+  }, [page, pageCount])
+
+  const pagedApartments = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredApartments.slice(start, start + pageSize)
+  }, [filteredApartments, page, pageSize])
 
   const toggleFilter = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
@@ -254,7 +305,7 @@ function ApartmentList({ filters: initialFilters }) {
         {!loading && !error && (
           <>
             <Row className="g-4">
-              {filteredApartments.map(apt => (
+              {pagedApartments.map(apt => (
                 <Col key={apt.id} xs={12} md={6} lg={4}>
                   <Card className="h-100 d-flex flex-column overflow-hidden rounded-2xl border border-slate-200 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
                     <div style={{ position: 'relative' }}>
@@ -268,10 +319,11 @@ function ApartmentList({ filters: initialFilters }) {
                       </span>
                     </div>
                     <Card.Body className="d-flex flex-column gap-3 flex-grow-1 p-4">
-                      <h3 className="text-xl font-semibold text-slate-900 break-words text-truncate" title={apt.name}>{apt.name}</h3>
+                      <h3 className="text-xl font-semibold text-slate-900 break-words text-truncate" title={apt.displayName}>{apt.displayName}</h3>
                       <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
                         <span>📐 {apt.size}</span>
                         <span>🏢 Lantai {apt.floor ?? '-'}</span>
+                        <span>🏷️ {apt.type === 'studio' ? 'Studio' : '2 Bedroom'}</span>
                       </div>
                       <div className="text-2xl font-bold text-slate-900">
                         {formatCurrency(filters.preference === 'beli' ? apt.salePrice : apt.rentPrice)}
@@ -296,6 +348,35 @@ function ApartmentList({ filters: initialFilters }) {
                 </Col>
               ))}
             </Row>
+
+            {pageCount > 1 && (
+              <div className="d-flex justify-content-center mt-4">
+                <Pagination className="mb-0">
+                  <Pagination.First onClick={() => setPage(1)} disabled={page === 1} />
+                  <Pagination.Prev onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} />
+                  {Array.from({ length: pageCount }, (_, i) => i + 1)
+                    .filter((p) => {
+                      if (pageCount <= 7) return true
+                      if (p === 1 || p === pageCount) return true
+                      return Math.abs(p - page) <= 2
+                    })
+                    .map((p, idx, arr) => {
+                      const prev = arr[idx - 1]
+                      const needsEllipsis = idx > 0 && p - prev > 1
+                      return (
+                        <span key={p}>
+                          {needsEllipsis && <Pagination.Ellipsis disabled />}
+                          <Pagination.Item active={p === page} onClick={() => setPage(p)}>
+                            {p}
+                          </Pagination.Item>
+                        </span>
+                      )
+                    })}
+                  <Pagination.Next onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page === pageCount} />
+                  <Pagination.Last onClick={() => setPage(pageCount)} disabled={page === pageCount} />
+                </Pagination>
+              </div>
+            )}
 
             {filteredApartments.length === 0 && (
               <div className="text-center py-5">

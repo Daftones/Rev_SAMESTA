@@ -1,7 +1,6 @@
 import { Container, Row, Col, Badge, Spinner, Alert, Button } from 'react-bootstrap'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import Navbar from '../components/Navbar'
 import { unitTypesAPI } from '../services/api'
 
 import studioHero from '../assets/Studio room.png'
@@ -44,7 +43,6 @@ function RoomTypeDetail() {
 
       return {
         id: item.unit_type_id || item.id,
-        slug: isStudio ? 'studio' : '2bedroom',
         name: name || (isStudio ? 'Studio Room' : '2 Bedroom'),
         size: Number.isFinite(sizeVal) ? `${sizeVal} m²` : item.size || '-',
         description: item.description || (isStudio
@@ -146,7 +144,6 @@ function RoomTypeDetail() {
 
   return (
     <>
-      <Navbar />
       <div className="bg-white py-10">
         <Container className="px-3">
           {loading && (

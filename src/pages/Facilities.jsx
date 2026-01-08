@@ -1,5 +1,4 @@
 import { Container, Row, Col, Card } from 'react-bootstrap'
-import Navbar from '../components/Navbar'
 
 function Facilities() {
   const facilities = [
@@ -49,7 +48,6 @@ function Facilities() {
 
   return (
     <>
-      <Navbar />
       <div className="bg-white py-10">
         <Container className="px-3">
           <div className="text-center mb-10">

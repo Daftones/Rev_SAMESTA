@@ -114,7 +114,9 @@ const unitTypesAPI = {
   },
 
   async getOne(id) {
-    const { data } = await api.get(`/unit-type/${id}`);
+    const safeId = String(id ?? '').trim()
+    if (!safeId) throw new Error('unitTypesAPI.getOne: id is required')
+    const { data } = await api.get(`/unit-type/${safeId}`);
     return data;
   },
 
@@ -124,12 +126,16 @@ const unitTypesAPI = {
   },
 
   async update(id, payload) {
-    const { data } = await api.patch(`/unit-type/${id}`, payload);
+    const safeId = String(id ?? '').trim()
+    if (!safeId) throw new Error('unitTypesAPI.update: id is required')
+    const { data } = await api.patch(`/unit-type/${safeId}`, payload);
     return data;
   },
 
   async delete(id) {
-    const { data } = await api.delete(`/unit-type/${id}`);
+    const safeId = String(id ?? '').trim()
+    if (!safeId) throw new Error('unitTypesAPI.delete: id is required')
+    const { data } = await api.delete(`/unit-type/${safeId}`);
     return data;
   },
 };

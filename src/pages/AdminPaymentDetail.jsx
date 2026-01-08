@@ -34,6 +34,44 @@ function AdminPaymentDetail() {
     []
   )
 
+  const stripBase64Whitespace = (value) => String(value || '').replace(/[\r\n\t\s]+/g, '')
+
+  const normalizeBase64 = (value) => {
+    const raw = stripBase64Whitespace(value)
+    if (!raw) return ''
+    // Support Base64URL tokens too
+    let s = raw.replace(/-/g, '+').replace(/_/g, '/')
+    // Add padding if missing
+    const pad = s.length % 4
+    if (pad === 2) s += '=='
+    else if (pad === 3) s += '='
+    else if (pad === 1) return ''
+    return s
+  }
+
+  const getImageMimeFromBase64 = (base64) => {
+    const s = String(base64 || '')
+    if (s.startsWith('iVBORw0KGgo')) return 'image/png'
+    if (s.startsWith('/9j/')) return 'image/jpeg'
+    if (s.startsWith('R0lGOD')) return 'image/gif'
+    if (s.startsWith('UklGR')) return 'image/webp'
+    return 'image/jpeg'
+  }
+
+  const isProbablyBase64 = (value) => {
+    if (!value || typeof value !== 'string') return false
+    const raw = stripBase64Whitespace(value)
+    if (!raw) return false
+    if (raw.startsWith('data:')) return false
+    if (/^https?:\/\//i.test(raw)) return false
+    // Heuristic: avoid treating typical URL/path strings as Base64
+    if (raw.includes('storage/') || raw.includes('public/') || raw.includes('\\') || raw.includes('/')) return false
+    const s = normalizeBase64(raw)
+    if (!s) return false
+    if (s.length < 64) return false
+    return /^[A-Za-z0-9+/]+={0,2}$/.test(s)
+  }
+
   const getAssetBase = () => (import.meta.env.VITE_API_BASE_URL || '').replace(/\/?api\/?$/, '')
 
   const buildAssetCandidates = (path) => {
@@ -41,6 +79,16 @@ function AdminPaymentDetail() {
     const trimmed = path.trim()
     if (!trimmed) return []
     if (trimmed.startsWith('data:')) return [trimmed]
+
+    if (isProbablyBase64(trimmed)) {
+      const base64 = normalizeBase64(trimmed)
+      const mime = getImageMimeFromBase64(base64)
+      return [`${mime};base64,${base64}`.replace(/^image\//, 'data:image/')]
+    }
+
+    // Sometimes a data URL gets prefixed (e.g., base URL + '/data:image...')
+    const idx = trimmed.indexOf('data:image')
+    if (idx !== -1) return [trimmed.slice(idx)]
     
     // If already a full URL, ensure HTTPS
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
@@ -95,6 +143,18 @@ function AdminPaymentDetail() {
       proofCandidates,
       user: raw.user || null,
     }
+  }
+
+  const getProofCandidatesForPayment = (p) => {
+    if (!p) return []
+    const existing = Array.isArray(p.proofCandidates) ? p.proofCandidates : []
+    if (existing.length > 0) return existing
+
+    const proofList = Array.isArray(p.proof) ? p.proof : []
+    return proofList
+      .filter((item) => typeof item === 'string' && item.trim() !== '')
+      .map((item) => buildAssetCandidates(item))
+      .filter((cands) => Array.isArray(cands) && cands.length > 0)
   }
 
   const formatDate = (value) => {
@@ -235,14 +295,20 @@ function AdminPaymentDetail() {
             <Card className="rounded-2xl border border-slate-200 shadow-sm">
               <Card.Body>
                 <div className="fw-semibold mb-2">Bukti Pembayaran</div>
-                {Array.isArray(payment.proofCandidates) && payment.proofCandidates.length > 0 ? (
+                {(() => {
+                  const proofs = getProofCandidatesForPayment(payment)
+                  if (!Array.isArray(proofs) || proofs.length === 0) {
+                    return <div className="text-muted">Tidak ada bukti pembayaran</div>
+                  }
+
+                  return (
                   <div className="d-flex flex-column gap-3">
-                    {payment.proofCandidates.map((cands, idx) => (
+                    {proofs.map((cands, idx) => (
                       <div key={idx} className="rounded-2xl border border-slate-200 bg-white p-2">
                         <div className="d-flex justify-content-between align-items-center gap-2 mb-2">
                           <div className="fw-semibold">Bukti {idx + 1}</div>
                           <Button as="a" href={cands[0]} target="_blank" rel="noreferrer" variant="outline-secondary" size="sm">
-                            Buka
+                            Buka di tab baru
                           </Button>
                         </div>
                         <img
@@ -265,9 +331,8 @@ function AdminPaymentDetail() {
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <div className="text-muted">Tidak ada bukti.</div>
-                )}
+                  )
+                })()}
               </Card.Body>
             </Card>
 

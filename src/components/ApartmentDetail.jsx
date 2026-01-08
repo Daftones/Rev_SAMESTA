@@ -127,7 +127,7 @@ function ApartmentDetail() {
   const facilities = apartment.facilities
     ? apartment.facilities.split(',').map(f => f.trim()).filter(Boolean)
     : []
-  
+  console.log(apartment)
   const price = preference === 'beli' ? apartment.sale_price : apartment.rent_price
   const priceLabel = preference === 'beli' ? 'Harga Jual' : 'Harga Sewa'
   const period = preference === 'sewa' ? '/bulan' : ''
@@ -158,6 +158,9 @@ function ApartmentDetail() {
     }
     if (node.requestFullscreen) node.requestFullscreen()
   }
+
+  const unitStatus = apartment?.status || apartment?.status
+
 
   return (
     <div className="bg-white py-10 pb-24 lg:pb-10">
@@ -326,27 +329,50 @@ function ApartmentDetail() {
                 </div>
               </div>
 
-              <div className="mb-4">
-                <div className="text-sm font-semibold text-slate-500">Daftar Cicilan</div>
-                <div className="mt-2 d-flex flex-column gap-2">
-                  {installmentOptions.map((opt) => (
-                    <div key={opt.months} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                      <div className="d-flex justify-content-between align-items-center gap-2">
-                        <div className="fw-semibold text-slate-800">Tenor {opt.months} bulan</div>
-                        <div className="text-slate-900 fw-bold">
-                          {opt.monthly ? `${formatCurrency(opt.monthly)}/bulan` : '-'}
+              {/* ================= CICILAN (HANYA UNTUK BELI) ================= */}
+              {preference === 'beli' && (
+                <div className="mb-4">
+                  <div className="text-sm font-semibold text-slate-500">
+                    Daftar Cicilan
+                  </div>
+
+                  <div className="mt-2 d-flex flex-column gap-2">
+                    {installmentOptions.map((opt) => (
+                      <div
+                        key={opt.months}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2"
+                      >
+                        <div className="d-flex justify-content-between align-items-center gap-2">
+                          <div className="fw-semibold text-slate-800">
+                            Tenor {opt.months} bulan
+                          </div>
+
+                          <div className="text-slate-900 fw-bold">
+                            {opt.monthly
+                              ? `${formatCurrency(opt.monthly)}/bulan`
+                              : '-'}
+                          </div>
+                        </div>
+
+                        <div className="text-muted small">
+                          * Informasi saja, tidak bisa dipilih untuk pembayaran.
                         </div>
                       </div>
-                      <div className="text-muted small">* Informasi saja, tidak bisa dipilih untuk pembayaran.</div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex flex-col gap-3">
-                <Button className="rounded-full" variant="dark" onClick={handleInquiry}>
-                  Ajukan Inquiry
+                <Button
+                  className="rounded-full"
+                  variant={unitStatus === 'book' ? 'secondary' : 'dark'}
+                  onClick={handleInquiry}
+                  disabled={unitStatus === 'book'}
+                >
+                  {unitStatus === 'book' ? 'Unit Sudah Dibooking' : 'Ajukan Inquiry'}
                 </Button>
+
                 <Button className="rounded-full" variant="outline-secondary" onClick={handleContactAdmin}>
                   Hubungi Admin
                 </Button>

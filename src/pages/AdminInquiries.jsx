@@ -385,7 +385,7 @@ function AdminInquiries() {
         head: [[
           '#',
           'Inquiry ID',
-          'User ID / NIK',
+          'Username',
           'User Identifier',
           'Unit ID',
           'Unit Type ID',
@@ -586,8 +586,8 @@ function AdminInquiries() {
                   <h5 className="mb-3">Informasi Customer</h5>
 
                   <Row className="mb-2 gy-2">
-                    <Col xs={12} sm={4}><strong>User ID / NIK:</strong></Col>
-                    <Col xs={12} sm={8}>{selectedInquiry.userId}</Col>
+                    <Col xs={12} sm={4}><strong>Username:</strong></Col>
+                    <Col xs={12} sm={8}>{selectedInquiry.userName}</Col>
                   </Row>
 
                   <Row className="mb-2 gy-2">

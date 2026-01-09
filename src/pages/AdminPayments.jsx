@@ -70,20 +70,49 @@ function AdminPayments() {
 
   const normalizeInquiry = (raw) => {
     if (!raw) return null
-    const totalPriceRaw = raw.total_price ?? raw.totalPrice ?? raw.amount ?? raw.total ?? raw.total_amount
-    const totalPrice = Number(totalPriceRaw)
+
+    const purchaseType = String(raw.purchase_type || raw.purchaseType || 'rent').toLowerCase()
+    const duration = Number(raw.duration ?? 1)
+
+    const rentPrice = Number(raw.unit?.unit_type?.rent_price)
+    const salePrice = Number(raw.unit?.unit_type?.sale_price)
+
+    let computedTotal = null
+
+    if (purchaseType === 'rent' && Number.isFinite(rentPrice)) {
+      computedTotal = rentPrice * duration
+    }
+
+    if (purchaseType === 'buy' && Number.isFinite(salePrice)) {
+      computedTotal = salePrice
+    }
+
     return {
-      id: raw.id || raw.inquiry_id || raw.uuid || raw._id,
-      userId: raw.user_id || raw.userId || raw.user_identifier,
-      unitId: raw.unit_id || raw.unitId,
-      unitTypeId: raw.unit_type_id || raw.unitTypeId || raw.unit_type || raw.unitType || '',
-      purchaseType: raw.purchase_type || raw.purchaseType || 'rent',
-      status: (raw.status || 'sent').toLowerCase(),
-      address: raw.address || '',
-      createdAt: raw.created_at || raw.createdAt,
-      totalPrice: Number.isFinite(totalPrice) ? totalPrice : null,
+      // ===== CORE =====
+      id: raw.id || raw.inquiry_id,
+      userId: raw.user_id,
+      unitId: raw.unit_id,
+      unitTypeId: raw.unit?.unit_type_id,
+
+      purchaseType,
+      duration,
+
+      // ===== TOTAL PRICE (🔥 FIX) =====
+      totalPrice: Number.isFinite(computedTotal) ? computedTotal : null,
+
+      // ===== STATUS & TIME =====
+      status: raw.status,
+      createdAt: raw.created_at,
+      updatedAt: raw.updated_at,
+
+      // ===== DISPLAY HELPERS =====
+      unitNumber: raw.unit_number || raw.unit?.unit_type?.unit_number,
+
+      user: raw.user ?? null,
+      unit: raw.unit ?? null,
     }
   }
+
 
   const deriveInquiryAmount = (inquiry) => {
     if (!inquiry) return null
@@ -101,6 +130,7 @@ function AdminPayments() {
 
   const normalizePayment = (raw) => {
     if (!raw) return null
+    console.log(raw);
     return {
       id: raw.id || raw.payment_id || raw.uuid || raw._id,
       inquiryId: raw.inquiry_id || raw.inquiryId || raw.inquiry_uuid,
@@ -112,6 +142,7 @@ function AdminPayments() {
       reference: raw.reference || raw.reference_no || raw.invoice_no,
       invoiceUrl: resolveFileUrl(raw.invoice_url || raw.invoiceUrl || raw.invoice),
       proofUrl: resolveFileUrl(raw.proof_url || raw.proofUrl || raw.proof),
+      proof: raw.proof,
       createdAt: raw.created_at || raw.createdAt,
       updatedAt: raw.updated_at || raw.updatedAt,
     }
@@ -440,10 +471,11 @@ function AdminPayments() {
         <Table hover responsive className="mb-0 align-middle">
           <thead className="bg-slate-900 text-white">
             <tr>
-              <th>#</th>
+              <th>No.</th>
               <th>Invoice</th>
               <th>Inquiry</th>
               <th>User</th>
+              <th>Unit</th>
               <th>Jumlah</th>
               <th>Status</th>
               <th>Aksi</th>
@@ -463,28 +495,24 @@ function AdminPayments() {
             ) : (
               filteredPayments.map((payment, index) => {
                 const inquiry = inquiriesMap[payment.inquiryId]
-                const displayAmount = getDisplayAmount(payment)
                 return (
                   <tr key={payment.id}>
                     <td>{index + 1}</td>
                     <td className="fw-semibold">{payment.reference || payment.id}</td>
                     <td>{payment.inquiryId || '-'}</td>
-                    <td>{inquiry?.userId || payment.userId || '-'}</td>
-                    <td>{formatAmountStrict(displayAmount)}</td>
+                    <td>
+                      <div className="fw-semibold text-slate-900">{(inquiry.user.name)}</div>
+                        {(String(inquiry?.userId || '').trim() && String(inquiry?.user.name || '').trim() && String(inquiry?.userId || '').trim() !== String(inquiry?.userName || '').trim()) && (
+                          <div className="text-muted small">ID: {String(inquiry.userId)}</div>
+                        )}
+                    </td>
+                    <td>{inquiry?.unit.unit_type.unit_number}</td>
+                    <td>{inquiry ? formatCurrency(inquiry.totalPrice) : '-'}</td>
                     <td>{getStatusBadge(payment.status)}</td>
                     <td>
                       <div className="d-flex flex-column flex-sm-row gap-2">
                         <Button variant="outline-primary" size="sm" onClick={() => handleViewDetails(payment)} className="w-100">
                           Detail
-                        </Button>
-                        <Button variant="outline-info" size="sm" onClick={() => handleStatusUpdate(payment.id, 'waiting_verification')} disabled={!!updatingId} className="w-100">
-                          Menunggu Verifikasi
-                        </Button>
-                        <Button variant="outline-success" size="sm" onClick={() => handleStatusUpdate(payment.id, 'confirmed')} disabled={!!updatingId} className="w-100">
-                          Verifikasi
-                        </Button>
-                        <Button variant="outline-danger" size="sm" onClick={() => handleStatusUpdate(payment.id, 'rejected')} disabled={!!updatingId} className="w-100">
-                          Tolak
                         </Button>
                       </div>
                     </td>
@@ -562,6 +590,76 @@ function AdminPayments() {
                   </Card.Body>
                 </Card>
               )}
+
+              {/* ================= FOTO BUKTI PEMBAYARAN ================= */}
+              <Card>
+                <Card.Body>
+                  <h5 className="mb-3">Bukti Pembayaran</h5>
+
+                  {(() => {
+                    const normalizeBase64 = (value) => {
+                      if (!value) return null
+
+                      // sudah benar (OPS I B)
+                      if (value.startsWith('data:image')) return value
+
+                      // masih keprefix URL API → potong
+                      const idx = value.indexOf('data:image')
+                      if (idx !== -1) {
+                        return value.slice(idx)
+                      }
+
+                      // base64 polos
+                      return `data:image/jpeg;base64,${value}`
+                    }
+
+                    if (Array.isArray(selectedPayment.proof) && selectedPayment.proof.length > 0) {
+                      return (
+                        <div className="d-flex flex-column gap-3">
+                          {selectedPayment.proof.map((src, idx) => (
+                            src ? (
+                              <img
+                                key={idx}
+                                src={normalizeBase64(src)}
+                                alt={`Proof ${idx + 1}`}
+                                className="img-fluid rounded shadow"
+                                style={{
+                                  maxHeight: '16.25rem',
+                                  width: '100%',
+                                  objectFit: 'contain'
+                                }}
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div key={idx} className="alert alert-warning mb-0">
+                                Foto {idx + 1} kosong
+                              </div>
+                            )
+                          ))}
+                        </div>
+                      )
+                    }
+
+                    if (selectedPayment.proof) {
+                      return (
+                        <img
+                          src={normalizeBase64(selectedPayment.proof)}
+                          alt="Bukti Pembayaran"
+                          className="img-fluid rounded shadow"
+                          style={{
+                            maxHeight: '16.25rem',
+                            width: '100%',
+                            objectFit: 'contain'
+                          }}
+                          loading="lazy"
+                        />
+                      )
+                    }
+
+                    return <p className="text-muted">Tidak ada foto</p>
+                  })()}
+                </Card.Body>
+              </Card>
 
               <Card>
                 <Card.Body>

@@ -20,6 +20,7 @@ function Payments() {
 
   const [form, setForm] = useState({
     inquiryId: '',
+    method: '', // cash / cashless
     proofFile: null,
   })
 
@@ -32,17 +33,46 @@ function Payments() {
 
   const normalizeInquiry = (raw) => {
     if (!raw) return null
-    const totalPriceRaw = raw.total_price ?? raw.totalPrice ?? raw.amount ?? raw.total ?? raw.total_amount
-    const totalPrice = Number(totalPriceRaw)
+
+    const purchaseType = String(raw.purchase_type || raw.purchaseType || 'rent').toLowerCase()
+    const duration = Number(raw.duration ?? 1)
+
+    const rentPrice = Number(raw.unit?.unit_type?.rent_price)
+    const salePrice = Number(raw.unit?.unit_type?.sale_price)
+
+    let computedTotal = null
+
+    if (purchaseType === 'rent' && Number.isFinite(rentPrice)) {
+      computedTotal = rentPrice * duration
+    }
+
+    if (purchaseType === 'buy' && Number.isFinite(salePrice)) {
+      computedTotal = salePrice
+    }
+
     return {
-      id: raw.id || raw.inquiry_id || raw.uuid || raw._id,
-      userId: raw.user_id || raw.userId || raw.user_identifier,
-      unitId: raw.unit_id || raw.unitId,
-      unitTypeId: raw.unit_type_id || raw.unitTypeId || raw.unit_type || raw.unitType || '',
-      purchaseType: raw.purchase_type || raw.purchaseType || 'rent',
-      status: (raw.status || 'sent').toLowerCase(),
-      createdAt: raw.created_at || raw.createdAt,
-      totalPrice: Number.isFinite(totalPrice) ? totalPrice : null,
+      // ===== CORE =====
+      id: raw.id || raw.inquiry_id,
+      userId: raw.user_id,
+      unitId: raw.unit_id,
+      unitTypeId: raw.unit?.unit_type_id,
+
+      purchaseType,
+      duration,
+
+      // ===== TOTAL PRICE (🔥 FIX) =====
+      totalPrice: Number.isFinite(computedTotal) ? computedTotal : null,
+
+      // ===== STATUS & TIME =====
+      status: raw.status,
+      createdAt: raw.created_at,
+      updatedAt: raw.updated_at,
+
+      // ===== DISPLAY HELPERS =====
+      unitNumber: raw.unit_number || raw.unit?.unit_type?.unit_number,
+
+      user: raw.user ?? null,
+      unit: raw.unit ?? null,
     }
   }
 
@@ -211,6 +241,16 @@ function Payments() {
       return
     }
 
+    if (!form.paymentMethod) {
+      setMessage('Pilih jenis pembayaran terlebih dahulu.')
+      return
+    }
+
+    if (form.paymentMethod !== 'cash' && !form.proofFile) {
+      setMessage('Bukti pembayaran wajib diupload untuk Transfer atau Debit.')
+      return
+    }
+
     if (!form.proofFile) {
       setMessage('Bukti pembayaran wajib diupload.')
       return
@@ -238,11 +278,14 @@ function Payments() {
       await paymentsAPI.create({
         inquiry_id: inquiryId,
         user_id: currentUserId,
-        method: 'Manual',
-        proof: [proofBase64],
-        // Keep contract-compatible: backend may ignore, but we still send inquiry-derived price.
+        method: form.paymentMethod,
+        proof:
+          form.paymentMethod === 'cash'
+            ? []
+            : [await toBase64PayloadString(form.proofFile)],
         total_price: inquiryAmount,
       })
+
       setMessage('Pembayaran berhasil dikirim. Silakan tunggu verifikasi admin.')
       setForm((prev) => ({ ...prev, proofFile: null }))
     } catch (err) {
@@ -305,12 +348,7 @@ function Payments() {
                       <option value="">-- Pilih inquiry --</option>
                       {inquiries.map((inq) => (
                         <option key={inq.id} value={inq.id}>
-                          {inq.id} • {inq.purchaseType === 'rent' ? 'Sewa' : 'Beli'} • {(() => {
-                            const unitTypeId = String(inq.unitTypeId || '').trim()
-                            const unitNumber = unitNumberMap[unitTypeId]
-                            if (unitNumber) return `Unit ${formatUnitNumber(unitNumber)}`
-                            return unitTypeNameMap[unitTypeId] || '-'
-                          })()}
+                          Unit {inq.unitNumber} | {inq.user.name} 
                         </option>
                       ))}
                     </Form.Select>
@@ -319,20 +357,26 @@ function Payments() {
                   <Col xs={12} md={6}>
                     <Form.Label className="small text-muted">Ringkasan Inquiry</Form.Label>
                     <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                      <div className="text-muted small">Inquiry ID</div>
-                      <div className="fw-semibold text-slate-900">{selectedInquiry ? String(selectedInquiry.id) : '-'}</div>
-
                       <div className="text-muted small mt-2">Tipe transaksi</div>
                       <div className="fw-semibold text-slate-900">
                         {selectedInquiry ? (String(selectedInquiry.purchaseType).toLowerCase() === 'rent' ? 'Sewa' : 'Beli') : '-'}
                       </div>
 
+                      <div className="text-muted small mt-2">Tipe Unit</div>
+                      <div className="fw-semibold text-slate-900">{selectedInquiry ? selectedInquiry.unit.unit_type.name : '-'}</div>
+
+                      <div className="text-muted small mt-2">Lantai</div>
+                      <div className="fw-semibold text-slate-900">{selectedInquiry ? selectedInquiry.unit.unit_type.floor : '-'}</div>
+
                       <div className="text-muted small mt-2">Unit</div>
-                      <div className="fw-semibold text-slate-900">{selectedInquiry ? selectedInquiryUnitLabel : '-'}</div>
+                      <div className="fw-semibold text-slate-900">{selectedInquiry ? selectedInquiry.unit.unit_type.unit_number : '-'}</div>
+
+                      <div className="text-muted small mt-2">Fasilitas</div>
+                      <div className="fw-semibold text-slate-900">{selectedInquiry ? selectedInquiry.unit.unit_type.facilities : '-'}</div>
 
                       <div className="text-muted small mt-2">Total Harga yang harus dibayar</div>
                       <div className="fw-bold text-slate-900">
-                        {Number.isFinite(inquiryAmount) ? formatCurrency(inquiryAmount) : '-'}
+                        {selectedInquiry ? formatCurrency(selectedInquiry.totalPrice) : '-'}
                       </div>
                     </div>
 
@@ -344,15 +388,44 @@ function Payments() {
                   </Col>
 
                   <Col xs={12}>
-                    <Form.Label className="small text-muted">Bukti Pembayaran</Form.Label>
-                    <Form.Control
-                      type="file"
-                      accept="image/*,application/pdf"
+                    <Form.Label className="small text-muted">Jenis Pembayaran</Form.Label>
+                    <Form.Select
+                      value={form.paymentMethod}
                       disabled={creating}
-                      onChange={(e) => setForm((prev) => ({ ...prev, proofFile: e.target.files?.[0] || null }))}
-                    />
-                    <div className="text-muted small mt-1">Format: JPG/PNG/PDF. Upload 1 file.</div>
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          paymentMethod: e.target.value,
+                          proofFile: null, // reset bukti saat ganti metode
+                        }))
+                      }
+                    >
+                      <option value="">-- Pilih metode pembayaran --</option>
+                      <option value="cash">Tunai</option>
+                      <option value="transfer">Transfer</option>
+                      <option value="debit">Debit</option>
+                    </Form.Select>
                   </Col>
+
+                  {form.paymentMethod !== 'cash' && form.paymentMethod !== '' && (
+                    <Col xs={12}>
+                      <Form.Label className="small text-muted">Bukti Pembayaran</Form.Label>
+                      <Form.Control
+                        type="file"
+                        accept="image/*"
+                        disabled={creating}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            proofFile: e.target.files?.[0] || null,
+                          }))
+                        }
+                      />
+                      <div className="text-muted small mt-1">
+                        Wajib upload bukti untuk Transfer / Debit
+                      </div>
+                    </Col>
+                  )}
 
                   <Col xs={12}>
                     <Button type="submit" variant="dark" disabled={creating || !selectedInquiry || !Number.isFinite(inquiryAmount)}>

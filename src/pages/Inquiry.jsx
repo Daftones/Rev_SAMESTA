@@ -471,6 +471,7 @@ function Inquiry() {
       // Keep unit_type_id as extra context (some backends use it even if validation is on unit_id)
       unit_type_id: fixedUnitId,
       purchase_type: formData.purchaseType,
+      duration: formData.rentDuration,
       address: formData.address,
       // Backend expects `identity_card` (required)
       identity_card: [formData.idCardPhoto],
@@ -479,6 +480,8 @@ function Inquiry() {
       // Email is sent separately for informational purposes only
       user_identifier: currentUserEmail || currentUser?.email || "",
     };
+
+    console.log(payload);
 
     setSubmitting(true);
     try {
@@ -518,7 +521,6 @@ function Inquiry() {
 
   return (
     <>
-      <Navbar />
       <div className="bg-slate-50 min-h-screen">
         <Container className="py-5 px-3">
           <Row className="justify-content-center">
@@ -640,6 +642,23 @@ function Inquiry() {
                           />
                         </div>
                       </Form.Group>
+
+                      {formData.purchaseType === "rent" && (
+                      <Form.Group className="mb-3">
+                        <Form.Label>Durasi Sewa</Form.Label>
+                        <Form.Select
+                          name="rentDuration"
+                          value={formData.rentDuration || ""}
+                          onChange={handleInputChange}
+                          required
+                        >
+                          <option value="">Pilih durasi</option>
+                          <option value="3">3 Bulan</option>
+                          <option value="6">6 Bulan</option>
+                          <option value="12">12 Bulan</option>
+                        </Form.Select>
+                      </Form.Group>
+                      )}
 
                       <Form.Group className="mb-4">
                         <Form.Label>Alamat Lengkap</Form.Label>

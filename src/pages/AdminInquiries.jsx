@@ -136,6 +136,7 @@ function AdminInquiries() {
         null,
       purchaseType: raw.purchase_type || raw.purchaseType || 'rent',
       status: normalizeStatus(raw),
+      duration: raw.duration,
       address: raw.address || '',
       createdAt: raw.created_at || raw.createdAt || new Date().toISOString(),
       idCardPhotos,
@@ -697,6 +698,11 @@ function AdminInquiries() {
                         {selectedInquiry.purchaseType === 'rent' ? 'Sewa' : 'Beli'}
                       </Badge>
                     </Col>
+                  </Row>
+
+                  <Row className="mb-2 gy-2">
+                    <Col xs={12} sm={4}><strong>Durasi Sewa:</strong></Col>
+                    <Col xs={12} sm={8}>{selectedInquiry.duration} bulan</Col>
                   </Row>
 
                   <Row className="mb-2 gy-2">

@@ -20,7 +20,7 @@ function Payments() {
 
   const [form, setForm] = useState({
     inquiryId: '',
-    method: '', // cash / cashless
+    payment_method: '', // cash / cashless
     proofFile: null,
   })
 
@@ -241,12 +241,12 @@ function Payments() {
       return
     }
 
-    if (!form.paymentMethod) {
+    if (!form.payment_method) {
       setMessage('Pilih jenis pembayaran terlebih dahulu.')
       return
     }
 
-    if (form.paymentMethod !== 'cash' && !form.proofFile) {
+    if (form.payment_method !== 'cash' && !form.proofFile) {
       setMessage('Bukti pembayaran wajib diupload untuk Transfer atau Debit.')
       return
     }
@@ -278,9 +278,9 @@ function Payments() {
       await paymentsAPI.create({
         inquiry_id: inquiryId,
         user_id: currentUserId,
-        method: form.paymentMethod,
+        payment_method: form.payment_method,
         proof:
-          form.paymentMethod === 'cash'
+          form.payment_method === 'cash'
             ? []
             : [await toBase64PayloadString(form.proofFile)],
         total_price: inquiryAmount,
@@ -390,12 +390,12 @@ function Payments() {
                   <Col xs={12}>
                     <Form.Label className="small text-muted">Jenis Pembayaran</Form.Label>
                     <Form.Select
-                      value={form.paymentMethod}
+                      value={form.payment_method}
                       disabled={creating}
                       onChange={(e) =>
                         setForm((prev) => ({
                           ...prev,
-                          paymentMethod: e.target.value,
+                          payment_method: e.target.value,
                           proofFile: null, // reset bukti saat ganti metode
                         }))
                       }
@@ -407,7 +407,7 @@ function Payments() {
                     </Form.Select>
                   </Col>
 
-                  {form.paymentMethod !== 'cash' && form.paymentMethod !== '' && (
+                  {form.payment_method !== 'cash' && form.payment_method !== '' && (
                     <Col xs={12}>
                       <Form.Label className="small text-muted">Bukti Pembayaran</Form.Label>
                       <Form.Control

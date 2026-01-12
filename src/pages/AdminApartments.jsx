@@ -1,11 +1,11 @@
 import { useMemo, useState, useEffect } from 'react'
 import { Container, Table, Button, Modal, Form, Badge, Alert, Spinner, Pagination } from 'react-bootstrap'
 import { unitTypesAPI } from '../services/api'
-import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
+// import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
 
 function AdminApartments() {
   const [apartments, setApartments] = useState([])
-  const [filters, setFilters] = useState({ status: 'all', type: 'all', location: '' })
+  const [filters, setFilters] = useState({ status: 'all', type: 'all', location: '', floor: 'all',})
   const [page, setPage] = useState(1)
   const pageSize = 10
   const [showModal, setShowModal] = useState(false)
@@ -57,7 +57,7 @@ function AdminApartments() {
   // Reset pagination when filters/data change
   useEffect(() => {
     setPage(1)
-  }, [filters.status, filters.type, filters.location, apartments.length])
+  }, [filters.status, filters.type, filters.location, filters.floor, apartments.length])
 
   const normalizeStatusForBackend = (value) => {
     const s = String(value || '').trim().toLowerCase()
@@ -88,24 +88,36 @@ function AdminApartments() {
     return 'other'
   }
 
-  const unitNumberMap = useMemo(() => {
-    return buildUnitNumberMap(apartments, {
-      getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
-      getFloor: (x) => x?.floor,
-      getName: (x) => x?.name,
-    })
-  }, [apartments])
+  // const unitNumberMap = useMemo(() => {
+  //   return buildUnitNumberMap(apartments, {
+  //     getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
+  //     getFloor: (x) => x?.floor,
+  //     getName: (x) => x?.name,
+  //   })
+  // }, [apartments])
 
-  const getApartmentDisplayName = (apartment) => {
-    const id = String(apartment?.unit_type_id ?? apartment?.id ?? apartment?.uuid ?? '').trim()
-    const unitNumber = unitNumberMap[id]
-    if (unitNumber) return `Unit ${formatUnitNumber(unitNumber)}`
-    return apartment?.name || '-'
-  }
+  // const getApartmentDisplayName = (apartment) => {
+  //   const id = String(apartment?.unit_type_id ?? apartment?.id ?? apartment?.uuid ?? '').trim()
+  //   const unitNumber = unitNumberMap[id]
+  //   if (unitNumber) return `Unit ${formatUnitNumber(unitNumber)}`
+  //   return apartment?.name || '-'
+  // }
+
+  const normalizeSearch = (text) =>
+  String(text || '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/-/g, '')
 
   const filteredApartments = useMemo(() => {
     const locationNeedle = String(filters.location || '').trim().toLowerCase()
     return apartments.filter((apartment) => {
+      if (filters.floor !== 'all') {
+        if (String(apartment.floor) !== String(filters.floor)) {
+          return false
+        }
+      }
+
       if (!apartment) return false
       const status = normalizeStatusForBackend(apartment.status)
 
@@ -117,22 +129,53 @@ function AdminApartments() {
       }
 
       if (locationNeedle) {
-        const hay = [
-          getApartmentDisplayName(apartment),
-          apartment.name,
-          apartment.floor,
-          apartment.size,
-          apartment.facilities,
-        ]
-          .filter((v) => v !== undefined && v !== null)
-          .map((v) => String(v).toLowerCase())
-          .join(' ')
-        if (!hay.includes(locationNeedle)) return false
-      }
+        const needle = normalizeSearch(locationNeedle)
 
+        const fields = {
+          unit: normalizeSearch(apartment.unit_number),
+          name: normalizeSearch(apartment.name),
+          floor: String(apartment.floor),
+          size: String(apartment.size),
+          facilities: normalizeSearch(apartment.facilities),
+        }
+
+        const matched =
+          fields.unit.includes(needle) ||
+          fields.name.includes(needle) ||
+          fields.floor === needle ||
+          fields.facilities.includes(needle)
+
+        if (!matched) return false
+      }
       return true
     })
-  }, [apartments, filters.status, filters.type, filters.location])
+    .sort((a, b) => {
+      const floorA = Number(a.floor) || 0
+      const floorB = Number(b.floor) || 0
+      if (floorA !== floorB) return floorA - floorB
+
+      const getUnitOrder = (unit) => {
+        if (!unit) return 0
+        const match = String(unit).match(/-(\d+)$/)
+        return match ? Number(match[1]) : 0
+      }
+
+      const unitA = getUnitOrder(a.unit_number) || 0
+      const unitB = getUnitOrder(b.unit_number) || 0
+      return unitA - unitB
+    })
+  }, [apartments, filters.status, filters.type, filters.location, filters.floor])
+
+  const availableFloors = useMemo(() => {
+    const floors = apartments
+      .map((a) => a.floor)
+      .filter((f) => f !== undefined && f !== null)
+
+    return Array.from(new Set(floors))
+      .map(Number)
+      .sort((a, b) => a - b)
+  }, [apartments])
+
 
   const pageCount = useMemo(() => {
     const total = filteredApartments.length
@@ -375,7 +418,7 @@ function AdminApartments() {
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3 mb-3">
         <Form className="row g-3">
-          <div className="col-12 col-md-3">
+          <div className="col-12 col-md-4">
             <Form.Label className="small text-muted">Status</Form.Label>
             <Form.Select
               value={filters.status}
@@ -389,7 +432,7 @@ function AdminApartments() {
             </Form.Select>
           </div>
 
-          <div className="col-12 col-md-3">
+          <div className="col-12 col-md-4">
             <Form.Label className="small text-muted">Tipe</Form.Label>
             <Form.Select
               value={filters.type}
@@ -400,6 +443,24 @@ function AdminApartments() {
               <option value="studio">Studio</option>
               <option value="2bedroom">2 Bedroom</option>
               <option value="other">Lainnya</option>
+            </Form.Select>
+          </div>
+
+          <div className="col-12 col-md-4">
+            <Form.Label className="small text-muted">Lantai</Form.Label>
+            <Form.Select
+              value={filters.floor}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, floor: e.target.value }))
+              }
+              disabled={loading}
+            >
+              <option value="all">Semua Lantai</option>
+              {availableFloors.map((floor) => (
+                <option key={floor} value={String(floor)}>
+                  Lantai {floor}
+                </option>
+              ))}
             </Form.Select>
           </div>
 
@@ -422,7 +483,7 @@ function AdminApartments() {
           <Button
             variant="outline-secondary"
             size="sm"
-            onClick={() => setFilters({ status: 'all', type: 'all', location: '' })}
+            onClick={() => setFilters({ status: 'all', type: 'all', location: '', floor: 'all', })}
             disabled={loading}
           >
             Reset Filter
@@ -436,11 +497,11 @@ function AdminApartments() {
             <tr>
               <th>Nomor Unit</th>
               <th>Jenis Unit</th>
-              <th>Lantai</th>
-              <th>Size</th>
+              <th className="d-none d-md-table-cell">Lantai</th>
+              <th className="d-none d-md-table-cell">Size</th>
               <th>Status</th>
-              <th>Harga Sewa</th>
-              <th>Harga Jual</th>
+              <th className="d-none d-md-table-cell">Harga Sewa</th>
+              <th className="d-none d-md-table-cell">Harga Jual</th>
               <th>Aksi</th>
             </tr>
           </thead>
@@ -464,11 +525,11 @@ function AdminApartments() {
                 <tr key={getApartmentId(apartment) || index}>
                   <td>{apartment.unit_number}</td>
                   <td>{apartment.name}</td>
-                  <td>{apartment.floor}</td>
-                  <td>{apartment.size}</td>
+                  <td className="d-none d-md-table-cell">{apartment.floor}</td>
+                  <td className="d-none d-md-table-cell">{apartment.size}</td>
                   <td>{getStatusBadge(apartment.status)}</td>
-                  <td>{apartment.rent_price ? formatPrice(apartment.rent_price) : '-'}</td>
-                  <td>{apartment.sale_price ? formatPrice(apartment.sale_price) : '-'}</td>
+                  <td className="d-none d-md-table-cell">{apartment.rent_price ? formatPrice(apartment.rent_price) : '-'}</td>
+                  <td className="d-none d-md-table-cell">{apartment.sale_price ? formatPrice(apartment.sale_price) : '-'}</td>
                   <td>
                     <div className="d-flex flex-column flex-sm-row gap-2">
                       <Button 
@@ -479,11 +540,12 @@ function AdminApartments() {
                       >
                         Edit
                       </Button>
+
                       <Button 
                         variant="outline-danger" 
                         size="sm"
                         onClick={() => handleDelete(getApartmentId(apartment))}
-                        className="w-100"
+                        className="w-100 d-none d-mad-inline"
                       >
                         Hapus
                       </Button>

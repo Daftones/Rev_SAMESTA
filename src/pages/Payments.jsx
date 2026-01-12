@@ -33,8 +33,8 @@ function Payments() {
 
   const normalizeInquiry = (raw) => {
     if (!raw) return null
-
     const purchaseType = String(raw.purchase_type || raw.purchaseType || 'rent').toLowerCase()
+    
     const duration = Number(raw.duration ?? 1)
 
     const rentPrice = Number(raw.unit?.unit_type?.rent_price)
@@ -246,43 +246,41 @@ function Payments() {
       return
     }
 
-    if (form.payment_method !== 'cash' && !form.proofFile) {
-      setMessage('Bukti pembayaran wajib diupload untuk Transfer atau Debit.')
-      return
-    }
+    let proofPayload = []
 
-    if (!form.proofFile) {
-      setMessage('Bukti pembayaran wajib diupload.')
-      return
-    }
+    if (form.payment_method !== 'cash') {
+      if(!form.proofFile) {
+        setMessage('Bukti pembayaran harus diupload untuk Transfer atau Debit.')
+        return
+      }
+  
+      const proofMime = String(form.proofFile?.type || '').toLowerCase()
+      if (!['image/jpeg', 'image/jpg', 'image/png'].includes(proofMime)) {
+        setMessage('Bukti pembayaran harus berupa gambar JPG atau PNG.')
+        return
+      }
 
-    const proofMime = String(form.proofFile?.type || '').toLowerCase()
-    if (proofMime && !['image/jpeg', 'image/jpg', 'image/png'].includes(proofMime)) {
-      setMessage('Bukti pembayaran harus berupa gambar JPG atau PNG.')
-      return
-    }
-
-    if (!Number.isFinite(inquiryAmount)) {
-      setMessage('Tidak bisa submit karena harga inquiry tidak tersedia.')
-      return
-    }
-
-    setCreating(true)
-    try {
       const proofBase64 = await toBase64PayloadString(form.proofFile)
       if (!proofBase64) {
         setMessage('Bukti pembayaran tidak valid. Gunakan gambar JPG atau PNG.')
         return
       }
 
+      if (!Number.isFinite(inquiryAmount)) {
+        setMessage('Tidak bisa submit karena harga inquiry tidak tersedia.')
+        return
+      }
+      proofPayload = [proofBase64]
+    }
+    console.log()
+
+    setCreating(true)
+    try {
       await paymentsAPI.create({
         inquiry_id: inquiryId,
         user_id: currentUserId,
         payment_method: form.payment_method,
-        proof:
-          form.payment_method === 'cash'
-            ? []
-            : [await toBase64PayloadString(form.proofFile)],
+        proof: proofPayload,
         total_price: inquiryAmount,
       })
 

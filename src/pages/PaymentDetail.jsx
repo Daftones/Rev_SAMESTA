@@ -258,7 +258,7 @@ function PaymentDetail() {
                           </div>
                           <img
                             src={cands[0]}
-                            alt={`Bukti pembayaran ${idx + 1}`}
+                            alt={`Bukti Pembayaran ${idx + 1}`}
                             className="img-fluid rounded"
                             style={{ maxHeight: '22.5rem', width: '100%', objectFit: 'contain' }}
                             crossOrigin="anonymous"

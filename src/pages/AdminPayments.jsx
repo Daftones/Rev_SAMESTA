@@ -131,6 +131,11 @@ function AdminPayments() {
   const normalizePayment = (raw) => {
     if (!raw) return null
     console.log(raw);
+
+    const proofValue = Array.isArray(raw.proof)
+      ? raw.proof[0]
+      : raw.proof
+
     return {
       id: raw.id || raw.payment_id || raw.uuid || raw._id,
       inquiryId: raw.inquiry_id || raw.inquiryId || raw.inquiry_uuid,
@@ -141,7 +146,7 @@ function AdminPayments() {
       paidAt: raw.paid_at || raw.paidAt,
       reference: raw.reference || raw.reference_no || raw.invoice_no,
       invoiceUrl: resolveFileUrl(raw.invoice_url || raw.invoiceUrl || raw.invoice),
-      proofUrl: resolveFileUrl(raw.proof_url || raw.proofUrl || raw.proof),
+      proofUrl: resolveFileUrl(raw.proof_url || raw.proofUrl || proofValue),
       proof: raw.proof,
       createdAt: raw.created_at || raw.createdAt,
       updatedAt: raw.updated_at || raw.updatedAt,
@@ -574,7 +579,7 @@ function AdminPayments() {
                 </Card.Body>
               </Card>
 
-              {(selectedPayment.invoiceUrl || selectedPayment.proofUrl) && (
+              {/* {(selectedPayment.invoiceUrl || selectedPayment.proofUrl) && (
                 <Card>
                   <Card.Body className="d-flex flex-wrap gap-2">
                     {selectedPayment.invoiceUrl && (
@@ -589,7 +594,7 @@ function AdminPayments() {
                     )}
                   </Card.Body>
                 </Card>
-              )}
+              )} */}
 
               {/* ================= FOTO BUKTI PEMBAYARAN ================= */}
               <Card>
@@ -598,16 +603,23 @@ function AdminPayments() {
 
                   {(() => {
                     const normalizeBase64 = (value) => {
-                      if (!value) return null
+                     if (!value) return null
 
-                      // sudah benar (OPS I B)
+                      // kalau array → ambil elemen pertama
+                      if (Array.isArray(value)) {
+                        if (value.length === 0) return null
+                        return normalizeBase64(value[0])
+                      }
+
+                      // pastikan string
+                      if (typeof value !== 'string') return null
+
+                      // sudah data URI
                       if (value.startsWith('data:image')) return value
 
-                      // masih keprefix URL API → potong
+                      // masih ada prefix URL
                       const idx = value.indexOf('data:image')
-                      if (idx !== -1) {
-                        return value.slice(idx)
-                      }
+                      if (idx !== -1) return value.slice(idx)
 
                       // base64 polos
                       return `data:image/jpeg;base64,${value}`

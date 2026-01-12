@@ -465,6 +465,7 @@ function Inquiry() {
     const normalizedUserId = Number.isFinite(Number(effectiveUserId))
       ? Number(effectiveUserId)
       : effectiveUserId;
+
     const payload = {
       user_id: normalizedUserId,
       unit_id: resolvedUnitId,
@@ -481,25 +482,41 @@ function Inquiry() {
       user_identifier: currentUserEmail || currentUser?.email || "",
     };
 
+    if (formData.purchaseType === "rent") {
+      payload.duration = Number(formData.rentDuration);
+    }
+
     console.log(payload);
 
-    setSubmitting(true);
     try {
-      const response = await inquiriesAPI.create(payload);
-      const created = normalizeInquiry(response?.data || response);
-      if (created) {
-        setHistory((prev) => [created, ...prev]);
-      }
-      await loadHistory(effectiveUserId, currentUserEmail);
+      setSubmitting(true);
+      console.log("PAYLOAD SEND:", payload);
+      await inquiriesAPI.create(payload);
       setShowSuccessModal(true);
     } catch (err) {
-      console.error("Gagal mengirim inquiry", err);
-      const message =
-        extractBackendErrorMessage(err) || "Gagal mengirim inquiry. Coba lagi.";
-      showAlertMessage(message, "danger");
+      console.error(err);
+      showAlertMessage("Gagal mengirim inquiry", "danger");
     } finally {
       setSubmitting(false);
     }
+
+    // try {
+    //   setSubmitting(true);
+    //   const response = await inquiriesAPI.create(payload);
+    //   const created = normalizeInquiry(response?.data || response);
+    //   if (created) {
+    //     setHistory((prev) => [created, ...prev]);
+    //   }
+    //   await loadHistory(effectiveUserId, currentUserEmail);
+    //   setShowSuccessModal(true);
+    // } catch (err) {
+    //   console.error("Gagal mengirim inquiry", err);
+    //   const message =
+    //     extractBackendErrorMessage(err) || "Gagal mengirim inquiry. Coba lagi.";
+    //   showAlertMessage(message, "danger");
+    // } finally {
+    //   setSubmitting(false);
+    // }
   };
 
   const handleModalClose = () => {

@@ -156,7 +156,7 @@ export default function MonthlyPromo() {
                 <Button 
                   variant="success" 
                   size="lg"
-                  onClick={() => window.open(`https://wa.me/6289506516117?text=Halo, saya tertarik dengan promo ${selectedPromo.title}`,'_blank')}
+                  onClick={() => window.open(`https://wa.me/6285366503363?text=Halo, saya tertarik dengan promo ${selectedPromo.title}`,'_blank')}
                 >
                   <i className="bi bi-whatsapp me-2"></i>
                   Hubungi via WhatsApp

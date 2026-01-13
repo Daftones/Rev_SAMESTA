@@ -3,6 +3,7 @@ import { Navbar as BsNavbar, Nav, NavDropdown, Container } from 'react-bootstrap
 import { useNavigate, Link } from 'react-router-dom'
 import logo from '../assets/samesta logo.png'
 import { authAPI } from '../services/api'
+import { getWhatsAppLink, WHATSAPP_DEFAULT_MESSAGE } from '../constants/whatsapp'
 
 const ADMIN_EMAILS = ['samestajakabaring@gmail.com']
 
@@ -23,6 +24,7 @@ export default function Navbar() {
   const [expanded, setExpanded] = useState(false)
   const [user, setUser] = useState(() => readStoredUser())
   const navigate = useNavigate()
+  const customerCareLink = getWhatsAppLink(WHATSAPP_DEFAULT_MESSAGE)
 
   const handleLogoClick = () => {
     setExpanded(false)
@@ -90,6 +92,14 @@ export default function Navbar() {
               <NavDropdown.Item href="/room-type/studio">Studio</NavDropdown.Item>
               <NavDropdown.Item href="/room-type/2bedroom">2 Bedroom</NavDropdown.Item>
             </NavDropdown>
+            <Nav.Link
+              href={customerCareLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-green-600 font-semibold"
+            >
+              Customer Care
+            </Nav.Link>
             {isAdmin && (
               <Nav.Link href="/admin/dashboard">Admin Dashboard</Nav.Link>
             )}

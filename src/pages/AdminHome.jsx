@@ -75,7 +75,14 @@ function AdminHome() {
 
   const salesSeries = useMemo(() => {
     const normalizeStatus = (raw) => String(raw?.status || '').toLowerCase()
-    const amountOf = (raw) => Number(raw?.amount ?? raw?.total ?? raw?.total_amount ?? 0)
+    const amountOf = (raw) => {
+      const type = raw?.inquiry?.purchase_type
+      if (type === 'rent') {
+        return Number(raw?.inquiry?.unit?.unit_type?.rent_price ?? 0)
+      }
+      return Number(raw?.inquiry?.unit?.unit_type?.sale_price ?? 0)
+    }
+
     const dateOf = (raw) => raw?.paid_at || raw?.paidAt || raw?.verified_at || raw?.verifiedAt || raw?.updated_at || raw?.updatedAt || raw?.created_at || raw?.createdAt
 
     const now = new Date()
@@ -87,10 +94,17 @@ function AdminHome() {
     }
     const indexByKey = new Map(months.map((m, idx) => [m.key, idx]))
 
-    ;(Array.isArray(payments) ? payments : []).forEach((p) => {
+    payments.forEach(p => {
+      console.log('RAW STATUS:', p.status)
+      console.log('DATE RAW:', dateOf(p))
+      console.log('AMOUNT:', amountOf(p))
+      console.log(p);
+    });
+    
+    (Array.isArray(payments) ? payments : []).forEach((p) => {
       const status = normalizeStatus(p)
       // Treat confirmed/paid/success/settled as successful sales
-      const isSuccess = status === 'confirmed' || status === 'paid' || status === 'success' || status === 'settled'
+      const isSuccess = ['confirmed', 'paid', 'settled'].includes(status)
       if (!isSuccess) return
 
       const dt = new Date(dateOf(p) || '')
@@ -104,8 +118,12 @@ function AdminHome() {
       months[idx].count += 1
     })
 
-    const max = Math.max(1, ...months.map((m) => m.total))
-    return months.map((m) => ({ ...m, max }))
+    const max = Math.max(...months.map(m => m.total), 1)
+
+    return months.map(m => ({
+      ...m,
+      max
+    }))
   }, [payments])
 
   return (
@@ -244,7 +262,13 @@ function AdminHome() {
 
               <div className="d-flex flex-column gap-2">
                 {salesSeries.map((m) => {
-                  const percent = Math.max(0, Math.min(100, (m.total / m.max) * 100))
+                  const percent = m.max > 0
+                    ? (m.total / m.max) * 100
+                    : 0
+                  console.log('debug');
+                  console.log(percent);
+                  console.log(m.max);
+                  console.log(m.total);
                   const totalText = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(m.total)
                   return (
                     <div key={m.key} className="d-flex align-items-center gap-3">

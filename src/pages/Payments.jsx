@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Alert, Button, Card, Col, Container, Form, Row, Spinner } from 'react-bootstrap'
 import { inquiriesAPI, paymentsAPI, unitTypesAPI } from '../services/api'
-import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
+// import { buildUnitNumberMap } from '../utils/unitNaming'
 
 function Payments() {
   const navigate = useNavigate()
@@ -15,8 +15,6 @@ function Payments() {
 
   const [currentUserId, setCurrentUserId] = useState('')
   const [inquiries, setInquiries] = useState([])
-  const [unitTypeNameMap, setUnitTypeNameMap] = useState({})
-  const [unitNumberMap, setUnitNumberMap] = useState({})
 
   const [form, setForm] = useState({
     inquiryId: '',
@@ -132,14 +130,14 @@ function Payments() {
           if (!id) return
           nameMap[id] = String(ut?.name || ut?.unit_name || ut?.title || '').trim()
         })
-        setUnitTypeNameMap(nameMap)
+        // setUnitTypeNameMap(nameMap)
 
-        const computedUnitNumberMap = buildUnitNumberMap(unitTypeList, {
-          getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
-          getFloor: (x) => x?.floor,
-          getName: (x) => x?.name,
-        })
-        setUnitNumberMap(computedUnitNumberMap)
+        // const computedUnitNumberMap = buildUnitNumberMap(unitTypeList, {
+        //   getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
+        //   getFloor: (x) => x?.floor,
+        //   getName: (x) => x?.name,
+        // })
+        // setUnitNumberMap(computedUnitNumberMap)
 
         if (initialInquiryId) {
           setForm((prev) => (prev.inquiryId ? prev : { ...prev, inquiryId: initialInquiryId }))
@@ -161,15 +159,15 @@ function Payments() {
     return inquiries.find((inq) => String(inq.id) === id) || null
   }, [form.inquiryId, inquiries])
 
-  const selectedInquiryUnitLabel = useMemo(() => {
-    if (!selectedInquiry) return '-'
-    const unitTypeId = String(selectedInquiry.unitTypeId || '').trim()
-    const unitNumber = unitNumberMap[unitTypeId]
-    if (unitNumber) return `Unit ${formatUnitNumber(unitNumber)}`
+  // const selectedInquiryUnitLabel = useMemo(() => {
+  //   if (!selectedInquiry) return '-'
+  //   const unitTypeId = String(selectedInquiry.unitTypeId || '').trim()
+  //   const unitNumber = unitNumberMap[unitTypeId]
+  //   if (unitNumber) return `Unit ${formatUnitNumber(unitNumber)}`
 
-    const unitTypeName = unitTypeNameMap[unitTypeId] || ''
-    return unitTypeName || '-'
-  }, [selectedInquiry, unitNumberMap, unitTypeNameMap])
+  //   const unitTypeName = unitTypeNameMap[unitTypeId] || ''
+  //   return unitTypeName || '-'
+  // }, [selectedInquiry, unitNumberMap, unitTypeNameMap])
 
   const inquiryAmount = useMemo(() => {
     if (!selectedInquiry) return null
@@ -401,7 +399,7 @@ function Payments() {
                       <option value="">-- Pilih metode pembayaran --</option>
                       <option value="cash">Tunai</option>
                       <option value="transfer">Transfer</option>
-                      <option value="debit">Debit</option>
+                      {/* <option value="debit">Debit</option> */}
                     </Form.Select>
                   </Col>
 

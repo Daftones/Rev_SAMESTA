@@ -105,6 +105,7 @@ function AdminHome() {
       const status = normalizeStatus(p)
       // Treat confirmed/paid/success/settled as successful sales
       const isSuccess = ['confirmed', 'paid', 'settled'].includes(status)
+
       if (!isSuccess) return
 
       const dt = new Date(dateOf(p) || '')

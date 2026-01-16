@@ -83,9 +83,11 @@ function AdminPayments() {
       computedTotal = rentPrice * duration
     }
 
-    if (purchaseType === 'buy' && Number.isFinite(salePrice)) {
+    if (purchaseType === 'sale' && Number.isFinite(salePrice)) {
       computedTotal = salePrice
     }
+    console.log(purchaseType);
+    console.log(computedTotal);
 
     return {
       // ===== CORE =====

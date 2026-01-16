@@ -2,6 +2,7 @@ import { Container, Row, Col, Card, Spinner, Alert, Button } from 'react-bootstr
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { paymentsAPI, unitTypesAPI } from '../services/api'
+import SalesChart from '../components/SalesChart'
 
 function AdminHome() {
   const navigate = useNavigate()
@@ -46,6 +47,69 @@ function AdminHome() {
     fetchPayments()
   }, [])
 
+  const buildMonthlySeries = (payments, purchaseType) => {
+    const normalizeStatus = (raw) => String(raw?.status || '').toLowerCase()
+
+    const amountOf = (raw) => {
+      if (purchaseType === 'rent') {
+        return Number(raw?.inquiry?.unit?.unit_type?.rent_price ?? 0)
+      }
+      return Number(raw?.inquiry?.unit?.unit_type?.sale_price ?? 0)
+    }
+
+    const dateOf = (raw) =>
+      raw?.paid_at ||
+      raw?.paidAt ||
+      raw?.verified_at ||
+      raw?.verifiedAt ||
+      raw?.updated_at ||
+      raw?.updatedAt ||
+      raw?.created_at ||
+      raw?.createdAt
+
+    const now = new Date()
+    const months = []
+
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      months.push({
+        key,
+        label: d.toLocaleString('id-ID', { month: 'short' }),
+        total: 0,
+        count: 0
+      })
+    }
+
+    const indexByKey = new Map(months.map((m, idx) => [m.key, idx]))
+
+    ;(Array.isArray(payments) ? payments : []).forEach((p) => {
+      const status = normalizeStatus(p)
+      const isSuccess = ['confirmed', 'paid', 'settled'].includes(status)
+      if (!isSuccess) return
+
+      if (p?.inquiry?.purchase_type !== purchaseType) return
+
+      const dt = new Date(dateOf(p) || '')
+      if (Number.isNaN(dt.getTime())) return
+
+      const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+      const idx = indexByKey.get(key)
+      if (idx === undefined) return
+
+      const amt = amountOf(p)
+      months[idx].total += Number.isFinite(amt) ? amt : 0
+      months[idx].count += 1
+    })
+
+    const max = Math.max(...months.map(m => m.total), 1)
+
+    return months.map(m => ({
+      ...m,
+      max
+    }))
+  }
+
   const stats = useMemo(() => {
     const total = units.length
 
@@ -73,59 +137,14 @@ function AdminHome() {
     }
   }, [units])
 
-  const salesSeries = useMemo(() => {
-    const normalizeStatus = (raw) => String(raw?.status || '').toLowerCase()
-    const amountOf = (raw) => {
-      const type = raw?.inquiry?.purchase_type
-      if (type === 'rent') {
-        return Number(raw?.inquiry?.unit?.unit_type?.rent_price ?? 0)
-      }
-      return Number(raw?.inquiry?.unit?.unit_type?.sale_price ?? 0)
-    }
-
-    const dateOf = (raw) => raw?.paid_at || raw?.paidAt || raw?.verified_at || raw?.verifiedAt || raw?.updated_at || raw?.updatedAt || raw?.created_at || raw?.createdAt
-
-    const now = new Date()
-    const months = []
-    for (let i = 5; i >= 0; i -= 1) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      months.push({ key, label: d.toLocaleString('id-ID', { month: 'short' }), total: 0, count: 0 })
-    }
-    const indexByKey = new Map(months.map((m, idx) => [m.key, idx]))
-
-    payments.forEach(p => {
-      console.log('RAW STATUS:', p.status)
-      console.log('DATE RAW:', dateOf(p))
-      console.log('AMOUNT:', amountOf(p))
-      console.log(p);
-    });
-    
-    (Array.isArray(payments) ? payments : []).forEach((p) => {
-      const status = normalizeStatus(p)
-      // Treat confirmed/paid/success/settled as successful sales
-      const isSuccess = ['confirmed', 'paid', 'settled'].includes(status)
-
-      if (!isSuccess) return
-
-      const dt = new Date(dateOf(p) || '')
-      if (Number.isNaN(dt.getTime())) return
-      const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
-      const idx = indexByKey.get(key)
-      if (idx === undefined) return
-
-      const amt = amountOf(p)
-      months[idx].total += Number.isFinite(amt) ? amt : 0
-      months[idx].count += 1
-    })
-
-    const max = Math.max(...months.map(m => m.total), 1)
-
-    return months.map(m => ({
-      ...m,
-      max
-    }))
+  const salesSeriesSale = useMemo(() => {
+    return buildMonthlySeries(payments, 'sale')
   }, [payments])
+
+  const salesSeriesRent = useMemo(() => {
+    return buildMonthlySeries(payments, 'rent')
+  }, [payments])
+
 
   return (
     <Container fluid className="min-vh-100 bg-slate-50 py-5 px-3">
@@ -224,8 +243,8 @@ function AdminHome() {
       </Row>
 
       <Row className="mt-4">
-        <Col lg={4}>
-          <Card className="h-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <Col>
+          <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <Card.Body>
               <h5 className="fw-bold mb-3">Quick Actions</h5>
               <div className="d-flex flex-column gap-2">
@@ -245,49 +264,25 @@ function AdminHome() {
             </Card.Body>
           </Card>
         </Col>
+      </Row>
 
-        <Col lg={8}>
-          <Card className="h-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <Card.Body>
-              <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                <div>
-                  <h5 className="fw-bold mb-0">Grafik Penjualan</h5>
-                  <div className="text-muted small">Ringkasan transaksi sukses 6 bulan terakhir</div>
-                </div>
-                {loadingPayments && (
-                  <div className="d-flex align-items-center gap-2 text-slate-600 text-sm">
-                    <Spinner animation="border" size="sm" /> Memuat transaksi...
-                  </div>
-                )}
-              </div>
+      <Row className="mt-4">
+        <Col md={3} lg={6}>
+          <SalesChart
+            title="Grafik Penjualan"
+            subtitle="Transaksi penjualan apartemen (6 bulan terakhir)"
+            salesSeries={salesSeriesSale}
+            loadingPayments={loadingPayments}
+          />
+        </Col>
 
-              <div className="d-flex flex-column gap-2">
-                {salesSeries.map((m) => {
-                  const percent = m.max > 0
-                    ? (m.total / m.max) * 100
-                    : 0
-                  console.log('debug');
-                  console.log(percent);
-                  console.log(m.max);
-                  console.log(m.total);
-                  const totalText = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(m.total)
-                  return (
-                    <div key={m.key} className="d-flex align-items-center gap-3">
-                      <div className="text-muted small" style={{ width: 52 }}>{m.label}</div>
-                      <div className="flex-grow-1">
-                        <div className="rounded-pill bg-slate-100" style={{ height: 12, overflow: 'hidden' }}>
-                          <div className="bg-slate-900" style={{ height: 12, width: `${percent}%` }} />
-                        </div>
-                      </div>
-                      <div className="text-muted small" style={{ width: 180, textAlign: 'right' }}>
-                        {m.count} trx • {totalText}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </Card.Body>
-          </Card>
+        <Col md={3} lg={6}>
+          <SalesChart
+            title="Grafik Sewa"
+            subtitle="Transaksi sewa apartemen (6 bulan terakhir)"
+            salesSeries={salesSeriesRent}
+            loadingPayments={loadingPayments}
+          />
         </Col>
       </Row>
     </Container>

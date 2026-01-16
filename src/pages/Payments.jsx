@@ -44,7 +44,7 @@ function Payments() {
       computedTotal = rentPrice * duration
     }
 
-    if (purchaseType === 'buy' && Number.isFinite(salePrice)) {
+    if (purchaseType === 'sale' && Number.isFinite(salePrice)) {
       computedTotal = salePrice
     }
 
@@ -156,6 +156,7 @@ function Payments() {
   const selectedInquiry = useMemo(() => {
     const id = String(form.inquiryId || '').trim()
     if (!id) return null
+    console.log(inquiries.find((inq) => String(inq.id) === id));
     return inquiries.find((inq) => String(inq.id) === id) || null
   }, [form.inquiryId, inquiries])
 
@@ -357,6 +358,16 @@ function Payments() {
                       <div className="fw-semibold text-slate-900">
                         {selectedInquiry ? (String(selectedInquiry.purchaseType).toLowerCase() === 'rent' ? 'Sewa' : 'Beli') : '-'}
                       </div>
+
+                      {selectedInquiry &&
+                        String(selectedInquiry.purchaseType).toLowerCase() === 'rent' && (
+                          <>
+                            <div className="text-muted small mt-2">Durasi</div>
+                            <div className="fw-semibold text-slate-900">
+                              {selectedInquiry.duration ?? '-'} bulan
+                            </div>
+                          </>
+                        )}
 
                       <div className="text-muted small mt-2">Tipe Unit</div>
                       <div className="fw-semibold text-slate-900">{selectedInquiry ? selectedInquiry.unit.unit_type.name : '-'}</div>

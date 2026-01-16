@@ -32,7 +32,7 @@ function ApartmentList({ filters: initialFilters }) {
     filters.preference === 'sewa' &&
     filters.furnishType === ''
 
-  const [sortOption, setSortOption] = useState('price-asc')
+  const [sortOption, setSortOption] = useState('')
   const [floors, setFloors] = useState([])
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(12)
@@ -116,6 +116,7 @@ function ApartmentList({ filters: initialFilters }) {
 
   const normalizeStatus = (status) => {
     const lower = (status || '').toLowerCase()
+    if (lower.includes('rent')) return 'rent'
     if (lower.includes('sold')) return 'sold'
     if (lower.includes('book') || lower.includes('occupied')) return 'booked'
     if (lower.includes('maintenance')) return 'maintenance'
@@ -126,10 +127,17 @@ function ApartmentList({ filters: initialFilters }) {
     const map = {
       available: 'bg-green-100 text-green-700',
       booked: 'bg-amber-100 text-amber-800',
+      rent: 'bg-red-100 text-red-700',
       sold: 'bg-red-100 text-red-700',
       maintenance: 'bg-slate-200 text-slate-700',
     }
     return map[status] || map.available
+  }
+
+  const parseUnitNumber = (unit) => {
+    if (!unit) return Number.MAX_SAFE_INTEGER
+    const num = parseInt(unit.replace(/\D/g, ''), 10)
+    return Number.isNaN(num) ? Number.MAX_SAFE_INTEGER : num
   }
 
   const apartments = useMemo(() => {
@@ -175,7 +183,12 @@ function ApartmentList({ filters: initialFilters }) {
       return true
     })
 
-    // 🔥 SORTING – HANYA JIKA SEMUA TIPE FURNISH
+    // ✅ DEFAULT SORT: UNIT NUMBER ASC
+    result = [...result].sort(
+      (a, b) => parseUnitNumber(a.unit_number) - parseUnitNumber(b.unit_number)
+    )
+
+    // 🔥 OPTIONAL SORT: HARGA (override unit number)
     if (
       filters.preference === 'sewa' &&
       filters.furnishType === '' &&
@@ -188,20 +201,15 @@ function ApartmentList({ filters: initialFilters }) {
         if (!Number.isFinite(priceA)) return 1
         if (!Number.isFinite(priceB)) return -1
 
-        if (sortOption === 'price-asc') {
-          return priceA - priceB
-        }
-
-        if (sortOption === 'price-desc') {
-          return priceB - priceA
-        }
-
-        return 0
+        return sortOption === 'price-asc'
+          ? priceA - priceB
+          : priceB - priceA
       })
     }
 
     return result
   }, [apartments, filters, sortOption])
+
 
   useEffect(() => {
     if (
@@ -233,9 +241,10 @@ function ApartmentList({ filters: initialFilters }) {
 
   const renderStatus = (status) => {
     if (status === 'booked') return 'Booked'
-    if (status === 'sold') return 'Sold'
+    if (status === 'rent') return 'Tersewa'
+    if (status === 'sold') return 'Terjual'
     if (status === 'maintenance') return 'Maintenance'
-    return 'Available'
+    return 'Tersedia'
   }
 
   return (
@@ -329,6 +338,7 @@ function ApartmentList({ filters: initialFilters }) {
                       value={sortOption}
                       onChange={(e) => setSortOption(e.target.value)}
                     >
+                      <option value="">Tidak Diurutkan</option>
                       <option value="price-asc">Harga Termurah</option>
                       <option value="price-desc">Harga Termahal</option>
                     </Form.Select>

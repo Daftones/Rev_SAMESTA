@@ -385,7 +385,9 @@ function AdminApartments() {
       case 'occupied':
       case 'booked':
       case 'maintenance':
-        return <Badge bg="warning" text="dark">Dibooking</Badge>
+        return <Badge bg="warning" text="dark">Booked</Badge>
+      case 'rent':
+        return <Badge bg="secondary">Tersewa</Badge>
       case 'sold':
         return <Badge bg="danger">Terjual</Badge>
       default:
@@ -427,7 +429,8 @@ function AdminApartments() {
             >
               <option value="all">Semua</option>
               <option value="available">Tersedia</option>
-              <option value="book">Dibooking</option>
+              <option value="book">Booked</option>
+              <option value="rent">Tersewa</option>
               <option value="sold">Terjual</option>
             </Form.Select>
           </div>
@@ -630,7 +633,8 @@ function AdminApartments() {
                 required
               >
                 <option value="available">Tersedia</option>
-                <option value="book">Dibooking</option>
+                <option value="book">Booked</option>
+                <option value="rent">Tersewa</option>
                 <option value="sold">Terjual</option>
               </Form.Select>
             </Form.Group>

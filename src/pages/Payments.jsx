@@ -22,6 +22,8 @@ function Payments() {
     proofFile: null,
   })
 
+  const [validatedInquiryIds, setValidatedInquiryIds] = useState([])
+
   const sameId = (a, b) => String(a ?? '') === String(b ?? '')
 
   const initialInquiryId = useMemo(() => {
@@ -110,41 +112,53 @@ function Payments() {
       setLoading(true)
       setError('')
       try {
-        const [inquiriesRes, unitTypesRes] = await Promise.all([
+        const [inquiriesRes, unitTypesRes, paymentsRes] = await Promise.all([
           inquiriesAPI.getAll({ user_id: currentUserId }),
           unitTypesAPI.getAll(),
+          paymentsAPI.getAll({ user_id: currentUserId }),
         ])
 
-        const inqList = Array.isArray(inquiriesRes?.data) ? inquiriesRes.data : Array.isArray(inquiriesRes) ? inquiriesRes : []
+        // ===== PAYMENTS (ambil inquiry yg sudah valid) =====
+        const payments = Array.isArray(paymentsRes?.data)
+          ? paymentsRes.data
+          : Array.isArray(paymentsRes)
+          ? paymentsRes
+          : []
+
+        const validatedIds = payments
+          .filter(p =>
+            ['validated', 'approved', 'paid', 'confirmed'].includes(
+              String(p.status || '').toLowerCase()
+            )
+          )
+          .map(p => String(p.inquiry_id))
+
+        setValidatedInquiryIds(validatedIds)
+
+        // ===== INQUIRIES =====
+        const inqList = Array.isArray(inquiriesRes?.data)
+          ? inquiriesRes.data
+          : Array.isArray(inquiriesRes)
+          ? inquiriesRes
+          : []
+
         const normalizedInquiries = inqList
           .map(normalizeInquiry)
           .filter(Boolean)
-          .filter((inq) => (!currentUserId ? true : sameId(inq.userId, currentUserId)))
+          .filter(inq => sameId(inq.userId, currentUserId))
+          .filter(inq => !validatedIds.includes(String(inq.id)))
           .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+
         setInquiries(normalizedInquiries)
 
-        const unitTypeList = Array.isArray(unitTypesRes?.data) ? unitTypesRes.data : Array.isArray(unitTypesRes) ? unitTypesRes : []
-        const nameMap = {}
-        unitTypeList.forEach((ut) => {
-          const id = String(ut?.unit_type_id ?? ut?.id ?? ut?.uuid ?? '').trim()
-          if (!id) return
-          nameMap[id] = String(ut?.name || ut?.unit_name || ut?.title || '').trim()
-        })
-        // setUnitTypeNameMap(nameMap)
-
-        // const computedUnitNumberMap = buildUnitNumberMap(unitTypeList, {
-        //   getId: (x) => x?.unit_type_id ?? x?.id ?? x?.uuid,
-        //   getFloor: (x) => x?.floor,
-        //   getName: (x) => x?.name,
-        // })
-        // setUnitNumberMap(computedUnitNumberMap)
-
         if (initialInquiryId) {
-          setForm((prev) => (prev.inquiryId ? prev : { ...prev, inquiryId: initialInquiryId }))
+          setForm(prev =>
+            prev.inquiryId ? prev : { ...prev, inquiryId: initialInquiryId }
+          )
         }
       } catch (err) {
-        console.error('Failed to load inquiries for payment', err)
-        setError('Gagal memuat data inquiry. Coba lagi.')
+        console.error(err)
+        setError('Gagal memuat data inquiry.')
       } finally {
         setLoading(false)
       }
@@ -159,16 +173,6 @@ function Payments() {
     console.log(inquiries.find((inq) => String(inq.id) === id));
     return inquiries.find((inq) => String(inq.id) === id) || null
   }, [form.inquiryId, inquiries])
-
-  // const selectedInquiryUnitLabel = useMemo(() => {
-  //   if (!selectedInquiry) return '-'
-  //   const unitTypeId = String(selectedInquiry.unitTypeId || '').trim()
-  //   const unitNumber = unitNumberMap[unitTypeId]
-  //   if (unitNumber) return `Unit ${formatUnitNumber(unitNumber)}`
-
-  //   const unitTypeName = unitTypeNameMap[unitTypeId] || ''
-  //   return unitTypeName || '-'
-  // }, [selectedInquiry, unitNumberMap, unitTypeNameMap])
 
   const inquiryAmount = useMemo(() => {
     if (!selectedInquiry) return null

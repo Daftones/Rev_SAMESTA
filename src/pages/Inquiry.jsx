@@ -117,6 +117,7 @@ function Inquiry() {
     return {
       id: raw.id || raw.inquiry_id || raw.uuid || raw._id || Date.now(),
       userId: raw.user_id || raw.userId || raw.user_identifier || "",
+      unit: raw.unit,
       unitId: raw.unit_id || raw.unitId || "",
       purchaseType: raw.purchase_type || raw.purchaseType || "rent",
       address: raw.address || "",
@@ -231,6 +232,7 @@ function Inquiry() {
         .map(normalizeInquiry)
         .filter(Boolean)
         .filter((item) => {
+          console.log(item);
           if (uid && String(item.userId) === String(uid)) return true;
           if (
             !uid &&
@@ -434,7 +436,7 @@ function Inquiry() {
       );
       return;
     }
-    console.log (formData.idCardPhoto);
+    console.log (formData);
 
     const effectiveUserId =
       currentUser?.id ?? currentUser?.user_id ?? currentUserId ?? "";
@@ -842,7 +844,7 @@ function Inquiry() {
                           <div className="d-flex justify-content-between align-items-start gap-3 flex-wrap">
                             <div>
                               <div className="fw-bold text-dark">
-                                {item.unitId || "Unit tidak diketahui"}
+                                Unit {item.unit.unit_type.unit_number|| "Unit tidak diketahui"}
                               </div>
                               <div className="text-muted small">
                                 {item.purchaseType === "sale" ? "Beli" : "Sewa"}{" "}

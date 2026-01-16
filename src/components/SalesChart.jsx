@@ -53,16 +53,17 @@ function SalesChart({
       tooltip: {
         callbacks: {
           title: (items) => `Bulan ${items[0].label}`,
-          label: (ctx) => formatIDR(ctx.raw)
+          label: (ctx) => `${ctx.raw} unit`
         }
       }
     },
     scales: {
       x: { grid: { display: false } },
       y: {
+        beginAtZero: true,
         ticks: {
-          callback: (value) =>
-            new Intl.NumberFormat('id-ID', { notation: 'compact' }).format(value)
+          precision: 0,
+          callback: (value) => value
         }
       }
     }

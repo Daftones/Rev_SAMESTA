@@ -116,7 +116,7 @@ function AdminHome() {
     const normalizeUnitStatus = (value) => {
       const s = String(value || '').trim().toLowerCase()
       if (s === 'occupied' || s === 'booked' || s === 'maintenance') return 'book'
-      if (s === 'available' || s === 'book' || s === 'sold') return s
+      if (s === 'available' || s === 'book' || s === 'sold' || s === 'rent') return s
       return s
     }
 
@@ -126,10 +126,11 @@ function AdminHome() {
         if (status === 'available') acc.available += 1
         else if (status === 'book') acc.book += 1
         else if (status === 'sold') acc.sold += 1
+        else if (status === 'rent') acc.rent += 1
         else acc.other += 1
         return acc
       },
-      { available: 0, book: 0, sold: 0, other: 0 }
+      { available: 0, book: 0, sold: 0, rent: 0, other: 0 }
     )
     return {
       total,
@@ -137,14 +138,85 @@ function AdminHome() {
     }
   }, [units])
 
-  const salesSeriesSale = useMemo(() => {
-    return buildMonthlySeries(payments, 'sale')
+  const monthKey = (dateString) => {
+    if (!dateString) return null
+
+    const d = new Date(dateString)
+    if (isNaN(d)) return null
+
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    return `${y}-${m}`
+  }
+
+  const getLast6Months = () => {
+    const months = []
+    const now = new Date()
+
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const key = `${y}-${m}`
+
+      months.push({
+        key,
+        label: d.toLocaleDateString('id-ID', {
+          month: 'short',
+          year: 'numeric'
+        })
+      })
+    }
+
+    return months
+  }
+
+  const salesSeries = useMemo(() => {
+    const last6Months = getLast6Months()
+    const result = {}
+
+    last6Months.forEach(m => {
+      result[m.key] = 0
+    })
+
+    payments
+      .filter(p => p.inquiry.purchase_type === 'sale')
+      .forEach(p => {
+        const key = monthKey(p.created_at)
+        if (key && key in result) {
+          result[key] += 1
+        }
+      })
+
+    return last6Months.map(m => ({
+      label: m.label,
+      total: result[m.key]
+    }))
   }, [payments])
 
-  const salesSeriesRent = useMemo(() => {
-    return buildMonthlySeries(payments, 'rent')
-  }, [payments])
+  const rentSeries = useMemo(() => {
+    const last6Months = getLast6Months()
+    const result = {}
 
+    last6Months.forEach(m => {
+      result[m.key] = 0
+    })
+
+    payments
+      .filter(p => p.inquiry.purchase_type === 'rent')
+      .forEach(p => {
+        const key = monthKey(p.created_at)
+        if (key && key in result) {
+          result[key] += 1
+        }
+      })
+
+    return last6Months.map(m => ({
+      label: m.label,
+      total: result[m.key]
+    }))
+  }, [payments])
 
   return (
     <Container fluid className="min-vh-100 bg-slate-50 py-5 px-3">
@@ -163,9 +235,9 @@ function AdminHome() {
         </Alert>
       )}
       
-      <Row className="g-4">
-        <Col md={6} lg={3}>
-          <Card className="h-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <Row className="g-4 row-cols-1 row-cols-md-2 row-cols-lg-5">
+        <Col>
+          <Card className="h-30 rounded-2xl border border-slate-200 bg-white shadow-sm">
             <Card.Body>
               <div className="d-flex align-items-center">
                 <div className="me-3 rounded-2xl bg-blue-50 px-3 py-2">
@@ -180,7 +252,7 @@ function AdminHome() {
           </Card>
         </Col>
 
-        <Col md={6} lg={3}>
+        <Col>
           <Card className="h-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
             <Card.Body>
               <div className="d-flex align-items-center">
@@ -196,7 +268,7 @@ function AdminHome() {
           </Card>
         </Col>
 
-        <Col md={6} lg={3}>
+        <Col>
           <Card className="h-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
             <Card.Body>
               <div className="d-flex align-items-center">
@@ -204,7 +276,7 @@ function AdminHome() {
                   <span style={{ fontSize: '2rem' }}>🟡</span>
                 </div>
                 <div>
-                  <h6 className="text-muted mb-1">Dibooking</h6>
+                  <h6 className="text-muted mb-1">Booked</h6>
                   <h2 className="mb-0 fw-bold text-warning">{stats.book}</h2>
                 </div>
               </div>
@@ -212,7 +284,7 @@ function AdminHome() {
           </Card>
         </Col>
 
-        <Col md={6} lg={3}>
+        <Col>
           <Card className="h-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
             <Card.Body>
               <div className="d-flex align-items-center">
@@ -222,6 +294,22 @@ function AdminHome() {
                 <div>
                   <h6 className="text-muted mb-1">Terjual</h6>
                   <h2 className="mb-0 fw-bold text-danger">{stats.sold}</h2>
+                </div>
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        <Col>
+          <Card className="h-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <Card.Body>
+              <div className="d-flex align-items-center">
+                <div className="me-3 rounded-2xl bg-rose-50 px-3 py-2">
+                  <span style={{ fontSize: '2rem' }}>⚪</span>
+                </div>
+                <div>
+                  <h6 className="text-muted mb-1">Tersewa</h6>
+                  <h2 className="mb-0 fw-bold text-secondary">{stats.rent}</h2>
                 </div>
               </div>
             </Card.Body>
@@ -271,7 +359,7 @@ function AdminHome() {
           <SalesChart
             title="Grafik Penjualan"
             subtitle="Transaksi penjualan apartemen (6 bulan terakhir)"
-            salesSeries={salesSeriesSale}
+            salesSeries={salesSeries}
             loadingPayments={loadingPayments}
           />
         </Col>
@@ -280,7 +368,7 @@ function AdminHome() {
           <SalesChart
             title="Grafik Sewa"
             subtitle="Transaksi sewa apartemen (6 bulan terakhir)"
-            salesSeries={salesSeriesRent}
+            salesSeries={rentSeries}
             loadingPayments={loadingPayments}
           />
         </Col>

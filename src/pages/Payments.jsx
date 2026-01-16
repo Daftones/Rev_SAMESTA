@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Alert, Button, Card, Col, Container, Form, Row, Spinner } from 'react-bootstrap'
+import { Alert, Button, Card, Col, Container, Form, Row, Spinner, Modal } from 'react-bootstrap'
 import { inquiriesAPI, paymentsAPI, unitTypesAPI } from '../services/api'
-// import { buildUnitNumberMap } from '../utils/unitNaming'
 
 function Payments() {
   const navigate = useNavigate()
@@ -24,7 +23,14 @@ function Payments() {
 
   const [validatedInquiryIds, setValidatedInquiryIds] = useState([])
 
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+
   const sameId = (a, b) => String(a ?? '') === String(b ?? '')
+
+  const handleModalClose = () => {
+    setShowSuccessModal(false);
+    navigate("/");
+  };
 
   const initialInquiryId = useMemo(() => {
     const params = new URLSearchParams(location.search || '')
@@ -289,6 +295,7 @@ function Payments() {
 
       setMessage('Pembayaran berhasil dikirim. Silakan tunggu verifikasi admin.')
       setForm((prev) => ({ ...prev, proofFile: null }))
+      setShowSuccessModal(true);
     } catch (err) {
       console.error('Failed to create payment', err)
       setMessage(extractBackendErrorMessage(err) || 'Gagal membuat pembayaran. Coba lagi.')
@@ -458,6 +465,49 @@ function Payments() {
           </Card.Body>
         </Card>
       </Container>
+    
+    {/* Success Modal */}
+      <Modal
+        show={showSuccessModal}
+        onHide={handleModalClose}
+        centered
+        backdrop="static"
+        keyboard={false}
+      >
+        <Modal.Body className="text-center p-5">
+          <div className="mb-4">
+            <div
+              style={{
+                width: "80px",
+                height: "80px",
+                borderRadius: "50%",
+                background: "#28a745",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto",
+                fontSize: "40px",
+                color: "white",
+              }}
+            >
+              OK
+            </div>
+          </div>
+          <h3 className="fw-bold mb-3">Pembayaran Berhasil Dikirim!</h3>
+          <p className="text-muted mb-4">
+            Terima kasih telah mengirimkan bukti pembayaran Anda. Tim kami akan segera
+            menghubungi Anda untuk proses lebih lanjut.
+          </p>
+          <Button
+            variant="dark"
+            size="lg"
+            onClick={handleModalClose}
+            className="px-5"
+          >
+            Kembali ke Beranda
+          </Button>
+        </Modal.Body>
+      </Modal>
     </div>
   )
 }

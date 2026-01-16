@@ -86,8 +86,7 @@ function AdminPayments() {
     if (purchaseType === 'sale' && Number.isFinite(salePrice)) {
       computedTotal = salePrice
     }
-    console.log(purchaseType);
-    console.log(computedTotal);
+    console.log(raw);
 
     return {
       // ===== CORE =====
@@ -98,6 +97,7 @@ function AdminPayments() {
 
       purchaseType,
       duration,
+      identity_card: raw.identity_card,
 
       // ===== TOTAL PRICE (🔥 FIX) =====
       totalPrice: Number.isFinite(computedTotal) ? computedTotal : null,
@@ -128,6 +128,14 @@ function AdminPayments() {
     const storedAmount = Number(payment?.amount)
     if (Number.isFinite(storedAmount) && storedAmount > 0) return storedAmount
     return null
+  }
+
+  const normalizeBase64Image = (value) => {
+    if (!value || typeof value !== 'string') return null
+    if (value.startsWith('data:image')) return value
+    const idx = value.indexOf('data:image')
+    if (idx !== -1) return value.slice(idx)
+    return `data:image/jpeg;base64,${value}`
   }
 
   const normalizePayment = (raw) => {
@@ -376,7 +384,6 @@ function AdminPayments() {
         'Jumlah': numberAmountForExport(displayAmount),
         'Status': getStatusText(payment.status),
         'Metode': payment.method || '-',
-        'Dibayar': payment.paidAt ? new Date(payment.paidAt).toLocaleString('id-ID') : '-',
         'Dibuat': payment.createdAt ? new Date(payment.createdAt).toLocaleString('id-ID') : '-'
       }
     })
@@ -546,7 +553,6 @@ function AdminPayments() {
                     <Col md={6}><strong>Status:</strong> {getStatusBadge(selectedPayment.status)}</Col>
                     <Col md={6}><strong>Jumlah:</strong> {formatAmountStrict(getDisplayAmount(selectedPayment))}</Col>
                     <Col md={6}><strong>Metode:</strong> {selectedPayment.method}</Col>
-                    <Col md={6}><strong>Dibayar:</strong> {formatDate(selectedPayment.paidAt)}</Col>
                     <Col md={6}><strong>Dibuat:</strong> {formatDate(selectedPayment.createdAt)}</Col>
                     <Col md={6}><strong>Diperbarui:</strong> {formatDate(selectedPayment.updatedAt)}</Col>
                   </Row>
@@ -555,25 +561,48 @@ function AdminPayments() {
 
               <Card>
                 <Card.Body>
-                  <h5 className="mb-3">Keterkaitan Inquiry</h5>
                   {(() => {
                     const inquiry = inquiriesMap[selectedPayment.inquiryId]
                     if (!inquiry) return <p className="text-muted mb-0">Inquiry tidak ditemukan.</p>
                     return (
                       <div className="d-flex flex-column gap-2">
-                        <div><strong>Inquiry ID:</strong> {inquiry.id}</div>
-                        <div><strong>User ID:</strong> {inquiry.userId}</div>
+                        <div><strong>Nama Lengkap:</strong> {inquiry.user.name}</div>
+                        <div><strong>Tipe Unit:</strong> {inquiry.unit.unit_type.name}</div>
                         <div>
                           <strong>Unit:</strong>{' '}
-                          {(() => {
-                            const unitTypeId = String(inquiry.unitTypeId || '').trim()
-                            const unitNumber = unitNumberMap[unitTypeId]
-                            if (unitNumber) return `Unit ${formatUnitNumber(unitNumber)}`
-                            return unitTypeNameMap[unitTypeId] || '-'
-                          })()}
+                          {inquiry.unit.unit_type.unit_number}
                         </div>
-                        <div><strong>Tipe:</strong> {inquiry.purchaseType === 'rent' ? 'Sewa' : 'Beli'}</div>
-                        <div><strong>Status Inquiry:</strong> {inquiry.status}</div>
+                        <div><strong>Tipe Transaksi:</strong> {inquiry.purchaseType === 'rent' ? 'Sewa' : 'Beli'}</div>
+                        <div><strong>Durasi Sewa:</strong> {inquiry.user.name}</div>
+                        <div><strong>Foto KTP:</strong></div>
+
+                        <div className="d-flex flex-column gap-3">
+                          {inquiry.identity_card.map((src, idx) => {
+                            const imgSrc = normalizeBase64Image(src)
+                            if (!imgSrc) {
+                              return (
+                                <div key={idx} className="alert alert-warning mb-0">
+                                  Foto KTP kosong
+                                </div>
+                              )
+                            }
+
+                            return (
+                              <img
+                                key={idx}
+                                src={imgSrc}
+                                alt={`Bukti pembayaran ${idx + 1}`}
+                                className="img-fluid rounded shadow"
+                                style={{
+                                  maxHeight: '18rem',
+                                  width: '100%',
+                                  objectFit: 'contain',
+                                }}
+                                loading="lazy"
+                              />
+                            )
+                          })}
+                        </div>
                         <div><strong>Dibuat:</strong> {formatDate(inquiry.createdAt)}</div>
                       </div>
                     )

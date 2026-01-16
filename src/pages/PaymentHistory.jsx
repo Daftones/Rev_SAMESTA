@@ -18,8 +18,22 @@ function PaymentHistory() {
 
   const normalizeInquiry = (raw) => {
     if (!raw) return null
-    const totalPriceRaw = raw.total_price ?? raw.totalPrice ?? raw.amount ?? raw.total ?? raw.total_amount
-    const totalPrice = Number(totalPriceRaw)
+    const purchaseType = String(raw.purchase_type || raw.purchaseType || 'rent').toLowerCase()
+    
+    const duration = Number(raw.duration ?? 1)
+
+    const rentPrice = Number(raw.unit?.unit_type?.rent_price)
+    const salePrice = Number(raw.unit?.unit_type?.sale_price)
+
+    let computedTotal = null
+
+    if (purchaseType === 'rent' && Number.isFinite(rentPrice)) {
+      computedTotal = rentPrice * duration
+    }
+
+    if (purchaseType === 'sale' && Number.isFinite(salePrice)) {
+      computedTotal = salePrice
+    }
     return {
       id: raw.id || raw.inquiry_id || raw.uuid || raw._id,
       userId: raw.user_id || raw.userId || raw.user_identifier,
@@ -28,7 +42,9 @@ function PaymentHistory() {
       purchaseType: raw.purchase_type || raw.purchaseType || 'rent',
       status: String(raw.status || 'sent').toLowerCase(),
       createdAt: raw.created_at || raw.createdAt,
-      totalPrice: Number.isFinite(totalPrice) ? totalPrice : null,
+      totalPrice: Number.isFinite(computedTotal) ? computedTotal : null,
+      unit: raw.unit ?? null,
+      duration: duration,
     }
   }
 
@@ -236,14 +252,20 @@ function PaymentHistory() {
                   {payment.inquiry && (
                     <div className="mt-2 small text-muted">
                       Tipe: <span className="text-slate-800 fw-semibold">{payment.inquiry.purchaseType === 'rent' ? 'Sewa' : 'Beli'}</span>
-                      {' · '}Unit:{' '}
+                      {' · '}
+                      {payment.inquiry &&
+                        String(payment.inquiry.purchaseType).toLowerCase() === 'rent' && (
+                          <>
+                            Durasi:{' '}
+                            <span className="text-slate-800 fw-semibold">
+                              {payment.inquiry.duration} bulan
+                            </span>
+                            {' · '}
+                          </>
+                        )}
+                      Unit:{' '}
                       <span className="text-slate-800 fw-semibold">
-                        {(() => {
-                          const unitTypeId = String(payment.inquiry.unitTypeId || '').trim()
-                          const unitNumber = unitNumberMap[unitTypeId]
-                          if (unitNumber) return `Unit ${formatUnitNumber(unitNumber)}`
-                          return unitTypeNameMap[unitTypeId] || '-'
-                        })()}
+                        {payment.inquiry.unit.unit_type.unit_number}
                       </span>
                     </div>
                   )}

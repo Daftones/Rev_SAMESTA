@@ -343,11 +343,14 @@ function Payments() {
                       disabled={creating}
                     >
                       <option value="">-- Pilih inquiry --</option>
-                      {inquiries.map((inq) => (
-                        <option key={inq.id} value={inq.id}>
-                          Unit {inq.unitNumber} | {inq.user.name} 
-                        </option>
-                      ))}
+                      {inquiries
+                        .filter(inq => inq.status !== 'rejected')
+                        .map((inq) => (
+                          <option key={inq.id} value={inq.id}>
+                            Unit {inq.unitNumber} | {inq.user.name}
+                          </option>
+                        ))
+                      }
                     </Form.Select>
                   </Col>
 

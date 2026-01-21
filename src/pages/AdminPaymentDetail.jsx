@@ -229,7 +229,6 @@ function AdminPaymentDetail() {
                 </div>
               </Card.Body>
             </Card>
-
           </div>
         ) : null}
       </Container>

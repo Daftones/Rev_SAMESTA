@@ -368,7 +368,7 @@ function Payments() {
                   <Col xs={12} md={6}>
                     <Form.Label className="small text-muted">Ringkasan Inquiry</Form.Label>
                     <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                      <div className="text-muted small mt-2">Tipe transaksi</div>
+                      <div className="text-muted small mt-2">Tipe Pembelian</div>
                       <div className="fw-semibold text-slate-900">
                         {selectedInquiry ? (String(selectedInquiry.purchaseType).toLowerCase() === 'rent' ? 'Sewa' : 'Beli') : '-'}
                       </div>

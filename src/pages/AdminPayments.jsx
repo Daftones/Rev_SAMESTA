@@ -5,6 +5,8 @@ import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
 import * as XLSX from 'xlsx'
+import ReactDOMServer from 'react-dom/server'
+import AdminPaymentInvoice from '../components/AdminPaymentInvoice'
 
 function AdminPayments() {
   const [payments, setPayments] = useState([])
@@ -70,7 +72,8 @@ function AdminPayments() {
 
   const normalizeInquiry = (raw) => {
     if (!raw) return null
-
+    console.log(`debug inquiry`);
+    console.log(raw);
     const purchaseType = String(raw.purchase_type || raw.purchaseType || 'rent').toLowerCase()
     const duration = Number(raw.duration ?? 1)
 
@@ -140,17 +143,35 @@ function AdminPayments() {
 
   const normalizePayment = (raw) => {
     if (!raw) return null
+    console.log(`debug payment`)
     console.log(raw);
 
     const proofValue = Array.isArray(raw.proof)
       ? raw.proof[0]
       : raw.proof
 
+    const purchaseType = String(raw.inquiry.purchase_type || raw.inquiry.purchaseType || 'rent').toLowerCase()
+    
+    const duration = Number(raw.inquiry.duration ?? 1)
+
+    const rentPrice = Number(raw.inquiry.unit?.unit_type?.rent_price)
+    const salePrice = Number(raw.inquiry.unit?.unit_type?.sale_price)
+
+    let computedTotal = null
+
+    if (purchaseType === 'rent' && Number.isFinite(rentPrice)) {
+      computedTotal = rentPrice * duration
+    }
+
+    if (purchaseType === 'sale' && Number.isFinite(salePrice)) {
+      computedTotal = salePrice
+    }
+
     return {
       id: raw.id || raw.payment_id || raw.uuid || raw._id,
       inquiryId: raw.inquiry_id || raw.inquiryId || raw.inquiry_uuid,
       userId: raw.user_id || raw.userId || raw.customer_id,
-      amount: Number(raw.amount ?? raw.total ?? raw.total_amount ?? 0),
+      totalPrice: Number.isFinite(computedTotal) ? computedTotal : null,
       method: raw.method || raw.payment_method || 'Manual',
       status: (raw.status || 'pending').toLowerCase(),
       paidAt: raw.paid_at || raw.paidAt,
@@ -158,8 +179,12 @@ function AdminPayments() {
       invoiceUrl: resolveFileUrl(raw.invoice_url || raw.invoiceUrl || raw.invoice),
       proofUrl: resolveFileUrl(raw.proof_url || raw.proofUrl || proofValue),
       proof: raw.proof,
+      identity_card: raw.identity_card,
+      inquiry: raw.inquiry,
+      user: raw.user,
       createdAt: raw.created_at || raw.createdAt,
       updatedAt: raw.updated_at || raw.updatedAt,
+      duration: duration,
     }
   }
 
@@ -199,7 +224,8 @@ function AdminPayments() {
         paymentsAPI.getAll(),
         inquiriesAPI.getAll(),
       ])
-
+      console.log(`paymentsRes`);
+      console.log(paymentsRes);
       const paymentList = Array.isArray(paymentsRes?.data) ? paymentsRes.data : Array.isArray(paymentsRes) ? paymentsRes : []
       const normalizedPayments = paymentList.map(normalizePayment).filter(Boolean)
       normalizedPayments.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
@@ -413,6 +439,57 @@ function AdminPayments() {
     XLSX.writeFile(wb, fileName)
   }
 
+  const printInvoice = () => {
+    console.log(selectedPayment);
+    if (!selectedPayment) return
+
+    const inquiry = selectedPayment.inquiry;
+    if (!inquiry) {
+      alert('Data inquiry tidak ditemukan')
+      return
+    }
+
+    const printWindow = window.open('', '_blank', 'width=900,height=650')
+
+    const html = ReactDOMServer.renderToStaticMarkup(
+      <AdminPaymentInvoice
+        payment={selectedPayment}
+        inquiry={inquiry}
+        totalPrice={selectedPayment.totalPrice}
+        formatCurrency={formatCurrency}
+        formatDate={formatDate}
+      />
+    )
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Invoice ${selectedPayment.reference || selectedPayment.id}</title>
+          <link
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+            rel="stylesheet"
+          />
+          <style>
+            body {
+              padding: 24px;
+            }
+          </style>
+        </head>
+        <body>
+          ${html}
+          <script>
+            window.onload = function () {
+              window.print()
+              window.close()
+            }
+          </script>
+        </body>
+      </html>
+    `)
+
+    printWindow.document.close()
+  }
+
   return (
     <Container fluid className="py-4 px-3">
       {error && (
@@ -572,10 +649,13 @@ function AdminPayments() {
                           <strong>Unit:</strong>{' '}
                           {inquiry.unit.unit_type.unit_number}
                         </div>
-                        <div><strong>Tipe Transaksi:</strong> {inquiry.purchaseType === 'rent' ? 'Sewa' : 'Beli'}</div>
-                        <div><strong>Durasi Sewa:</strong> {inquiry.user.name}</div>
+                        <div><strong>Tipe Pembelian:</strong> {inquiry.purchaseType === 'rent' ? 'Sewa' : 'Beli'}</div>
+                        {inquiry.purchaseType === 'rent' && (
+                          <div>
+                            <strong>Durasi Sewa:</strong> {inquiry.duration} bulan
+                          </div>
+                        )}
                         <div><strong>Foto KTP:</strong></div>
-
                         <div className="d-flex flex-column gap-3">
                           {inquiry.identity_card.map((src, idx) => {
                             const imgSrc = normalizeBase64Image(src)
@@ -724,6 +804,13 @@ function AdminPayments() {
           )}
         </Modal.Body>
         <Modal.Footer>
+          <Button
+              variant="outline-primary"
+              onClick={printInvoice}
+              disabled={!payments}
+            >
+              🖨️ Print Invoice
+          </Button>
           <Button variant="secondary" onClick={handleCloseModal} disabled={!!updatingId}>
             Tutup
           </Button>

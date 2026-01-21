@@ -546,7 +546,7 @@ function AdminInquiries() {
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3 mb-3">
         <Form className="row g-3">
           <div className="col-12 col-md-3">
-            <Form.Label className="small text-muted">Tipe Transaksi</Form.Label>
+            <Form.Label className="small text-muted">Tipe Pembelian</Form.Label>
             <Form.Select
               value={filters.purchaseType}
               onChange={(e) => setFilters((prev) => ({ ...prev, purchaseType: e.target.value }))}
@@ -700,10 +700,16 @@ function AdminInquiries() {
                     </Col>
                   </Row>
 
-                  <Row className="mb-2 gy-2">
-                    <Col xs={12} sm={4}><strong>Durasi Sewa:</strong></Col>
-                    <Col xs={12} sm={8}>{selectedInquiry.duration} bulan</Col>
-                  </Row>
+                  {selectedInquiry.purchaseType === 'rent' && (
+                    <Row className="mb-2 gy-2">
+                      <Col xs={12} sm={4}>
+                        <strong>Durasi Sewa:</strong>
+                      </Col>
+                      <Col xs={12} sm={8}>
+                        {selectedInquiry.duration} bulan
+                      </Col>
+                    </Row>
+                  )}
 
                   <Row className="mb-2 gy-2">
                     <Col xs={12} sm={4}><strong>Alamat:</strong></Col>

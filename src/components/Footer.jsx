@@ -24,7 +24,7 @@ function Footer() {
           <Col md={3} className="space-y-2 text-sm text-slate-300">
             <h5 className="text-lg font-semibold text-white">Hubungi Kami</h5>
             <p>Silaberanti, Kecamatan Seberang Ulu I, Kota Palembang, Sumatera Selatan</p>
-            <p>Telp: (021) 555 0199</p>
+            <p>Telp: (+62)85366503363</p>
             <p>Email: samestajakabaring@gmail.com</p>
             <div className="flex gap-3 text-sm font-semibold text-white">
               <a href="https://www.instagram.com/samestajakabaringpalembang/" target="_blank" rel="noreferrer" className="hover:underline">Instagram</a>

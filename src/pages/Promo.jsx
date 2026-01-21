@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { Container, Row, Col, Card, Badge, Button, Modal } from 'react-bootstrap'
 import { useNavigate } from 'react-router-dom'
+import promoImage1 from '../assets/Promo samesta 1.png'
+import promoImage2 from '../assets/promo samesta 2.png'
+import promoImage3 from '../assets/Promo samesta 3.png'
+import promoImage4 from '../assets/promo samesta 4.png'
+import promoImage5 from '../assets/promo samesta 5.png'
+import promoImage6 from '../assets/promo samesta 6.png'
 
 function Promo() {
   const navigate = useNavigate()
@@ -24,7 +30,8 @@ function Promo() {
       discount: '25% OFF',
       description: 'First month rent for new tenants',
       validUntil: 'Dec 31, 2025',
-      terms: 'Valid for new tenants only. Minimum 6 months contract required.'
+      terms: 'Valid for new tenants only. Minimum 6 months contract required.',
+      image: promoImage1
     },
     {
       id: 2,
@@ -32,7 +39,8 @@ function Promo() {
       discount: '30% OFF',
       description: 'Move in this month and save big',
       validUntil: 'Dec 31, 2025',
-      terms: 'Available for immediate move-in. Subject to availability.'
+      terms: 'Available for immediate move-in. Subject to availability.',
+      image: promoImage2
     },
     {
       id: 3,
@@ -40,7 +48,8 @@ function Promo() {
       discount: '15% OFF',
       description: 'Book 3 months in advance',
       validUntil: 'Dec 31, 2025',
-      terms: 'Booking must be made at least 3 months before move-in date.'
+      terms: 'Booking must be made at least 3 months before move-in date.',
+      image: promoImage3
     },
     {
       id: 4,
@@ -48,7 +57,8 @@ function Promo() {
       discount: '20% OFF',
       description: 'Special holiday rates available',
       validUntil: 'Jan 15, 2026',
-      terms: 'Valid during holiday season. Limited units available.'
+      terms: 'Valid during holiday season. Limited units available.',
+      image: promoImage4
     },
     {
       id: 5,
@@ -56,7 +66,8 @@ function Promo() {
       discount: '35% OFF',
       description: 'Book 6+ months and get extra savings',
       validUntil: 'Jan 31, 2026',
-      terms: 'Minimum 6 months contract. First month payment required upfront.'
+      terms: 'Minimum 6 months contract. First month payment required upfront.',
+      image: promoImage5
     },
     {
       id: 6,
@@ -64,7 +75,8 @@ function Promo() {
       discount: '10% OFF',
       description: 'Valid student ID required',
       validUntil: 'Dec 31, 2025',
-      terms: 'Must present valid student ID. Applicable to studio units only.'
+      terms: 'Must present valid student ID. Applicable to studio units only.',
+      image: promoImage6
     }
   ]
 
@@ -80,30 +92,45 @@ function Promo() {
           <Row className="g-4">
             {promos.map((promo) => (
               <Col key={promo.id} md={6} lg={4}>
-                <Card className="h-100 rounded-2xl border border-slate-200 shadow-sm">
-                  <div className="relative">
-                    <div className="flex h-64 w-full items-center justify-center bg-slate-100 text-5xl">🏢</div>
+                <Card className="h-100 rounded-3xl border-0 shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden" style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div className="position-relative overflow-hidden" style={{ aspectRatio: '4 / 3', flexShrink: 0 }}>
+                    <img
+                      src={promo.image}
+                      alt={`${promo.title} - Promo Samesta Apartment`}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        objectPosition: 'center',
+                        transition: 'transform 0.3s ease'
+                      }}
+                      className="transition-transform duration-300 hover:scale-105"
+                      loading="lazy"
+                    />
                     <Badge 
                       bg="danger" 
-                      className="position-absolute top-0 end-0 m-3 fs-6 fs-sm-5 fs-lg-4 px-3 px-sm-4 py-2 rounded-full"
+                      className="position-absolute top-0 end-0 m-3 fs-5 px-4 py-2 rounded-pill shadow-lg"
+                      style={{ fontWeight: '700' }}
                     >
                       {promo.discount}
                     </Badge>
                   </div>
-                  <Card.Body className="d-flex flex-column">
-                    <Card.Title className="fw-bold fs-3 mb-3 text-slate-900">{promo.title}</Card.Title>
-                    <Card.Text className="text-slate-600 mb-3 fs-6">
-                      {promo.description}
-                    </Card.Text>
-                    <div className="mb-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
-                      <strong className="block text-slate-800 mb-1">Syarat & Ketentuan:</strong>
-                      <span>{promo.terms}</span>
+                  <Card.Body className="d-flex flex-column p-4" style={{ gap: '1rem' }}>
+                    <div>
+                      <Card.Title className="fw-bold fs-4 mb-2 text-slate-900 lh-sm">{promo.title}</Card.Title>
+                      <Card.Text className="text-slate-600 mb-0 fs-6">
+                        {promo.description}
+                      </Card.Text>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600" style={{ fontSize: '0.875rem' }}>
+                      <strong className="d-block text-slate-800 mb-2">Syarat & Ketentuan:</strong>
+                      <span className="d-block lh-sm">{promo.terms}</span>
                     </div>
                     <div className="mt-auto">
-                      <div className="d-flex justify-content-between align-items-center mb-3 text-sm text-slate-600">
+                      <div className="mb-3 text-sm text-slate-600">
                         <small>
-                          <i className="bi bi-calendar-event me-1"></i>
-                          Valid sampai {promo.validUntil}
+                          <i className="bi bi-calendar-event me-2"></i>
+                          Valid sampai <strong>{promo.validUntil}</strong>
                         </small>
                       </div>
                       <div className="d-grid gap-2">
@@ -111,7 +138,7 @@ function Promo() {
                           variant="dark" 
                           size="lg"
                           onClick={() => handleShowDetails(promo)}
-                          className="rounded-full"
+                          className="rounded-full fw-semibold"
                         >
                           Info Lebih Lanjut
                         </Button>

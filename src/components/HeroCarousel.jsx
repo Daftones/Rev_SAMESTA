@@ -1,7 +1,7 @@
 import { Carousel } from 'react-bootstrap'
 import { Link } from 'react-router-dom'
-import studioImg from '../assets/Studio room.png'
-import twoBedImg from '../assets/2 bedroom.png'
+import studioImg from '../assets/Studio room 1.jpeg'
+import twoBedImg from '../assets/2 bedroom 1.jpeg'
 
 const slides = [
   {

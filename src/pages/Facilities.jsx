@@ -6,45 +6,46 @@ function Facilities() {
       id: 1,
       name: 'Minimarket',
       icon: '🏪',
-      description: 'Minimarket 24 jam untuk kebutuhan sehari-hari Anda'
+      description: 'Minimarket 24 jam untuk memenuhi kebutuhan sehari-hari Anda'
     },
     {
       id: 2,
       name: 'Laundry',
       icon: '👔',
-      description: 'Layanan laundry profesional untuk kemudahan Anda'
+      description: 'Layanan laundry profesional untuk kemudahan dan kenyamanan Anda'
     },
     {
       id: 3,
       name: 'CCTV',
       icon: '📹',
-      description: 'Sistem CCTV 24/7 untuk keamanan maksimal'
+      description: 'Sistem CCTV 24 jam untuk menjaga keamanan lingkungan'
     },
     {
       id: 4,
       name: 'One Gate System',
       icon: '🚪',
-      description: 'Sistem satu pintu masuk dengan keamanan ketat'
+      description: 'Sistem satu pintu masuk untuk keamanan yang lebih terkontrol'
     },
     {
       id: 5,
       name: 'Jogging Track',
       icon: '🏃',
-      description: 'Jogging track untuk olahraga pagi dan sore Anda'
+      description: 'Area jogging track untuk aktivitas olahraga pagi maupun sore'
     },
     {
       id: 6,
       name: 'Lapangan Bermain',
       icon: '🎪',
-      description: 'Area bermain aman dan nyaman untuk anak-anak'
+      description: 'Area bermain yang aman dan nyaman untuk anak-anak'
     },
     {
       id: 7,
-      name: 'Kolam Renang',
-      icon: '🏊',
-      description: 'Kolam renang dengan pemandangan kota yang indah'
+      name: 'Food & Beverage',
+      icon: '🍽️',
+      description: 'Area food & beverage dengan berbagai pilihan makanan dan minuman'
     }
   ]
+
 
   return (
     <>

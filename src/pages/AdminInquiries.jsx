@@ -582,9 +582,9 @@ function AdminInquiries() {
               <th>No.</th>
               <th>Nama Lengkap</th>
               <th>Unit yang dipesan</th>
-              <th>S / B</th>
+              <th className="d-none d-md-table-cell">S / B</th>
               <th>Status</th>
-              <th>Tanggal</th>
+              <th className="d-none d-md-table-cell">Tanggal</th>
               <th>Aksi</th>
             </tr>
           </thead>
@@ -608,16 +608,16 @@ function AdminInquiries() {
                   <td>
                     <div className="fw-semibold text-slate-900">{getInquiryUserLabel(inquiry)}</div>
                     {(String(inquiry?.userId || '').trim() && String(inquiry?.userName || '').trim() && String(inquiry?.userId || '').trim() !== String(inquiry?.userName || '').trim()) && (
-                      <div className="text-muted small">ID: {String(inquiry.userId)}</div>
+                      <div className="text-muted small d-none d-md-block">ID: {String(inquiry.userId)}</div>
                     )}
                   </td>
                   <td>
                     <div className="fw-semibold text-slate-900">{(inquiry.unit_number)}</div>
                     {(String(inquiry?.unitId || '').trim() || String(inquiry?.unitTypeId || '').trim()) && (
-                      <div className="text-muted small">ID: {String(inquiry.unitTypeId || inquiry.unitId || '')}</div>
+                      <div className="text-muted small d-none d-md-block">ID: {String(inquiry.unitTypeId || inquiry.unitId || '')}</div>
                     )}
                   </td>
-                  <td>
+                  <td className="d-none d-md-table-cell">
                     <Badge bg={inquiry.purchaseType === 'rent' ? 'info' : 'primary'}>
                       {inquiry.purchaseType === 'rent' ? 'Sewa' : 'Beli'}
                     </Badge>
@@ -639,7 +639,7 @@ function AdminInquiries() {
                         : 'Terkirim'}
                     </Badge>
                   </td>
-                  <td>{formatDate(inquiry.createdAt)}</td>
+                  <td className="d-none d-md-table-cell">{formatDate(inquiry.createdAt)}</td>
                   <td>
                     <div className="d-flex flex-column flex-sm-row gap-2">
                       <Button 

@@ -102,6 +102,7 @@ function AdminPayments() {
     }
   }
 
+
   const normalizeInquiry = (raw) => {
     if (!raw) return null
     console.log(`debug inquiry`);
@@ -595,10 +596,10 @@ function AdminPayments() {
           <thead className="bg-slate-900 text-white">
             <tr>
               <th>No.</th>
-              <th>Invoice</th>
-              <th>Inquiry</th>
+              <th className="d-none d-md-table-cell">Invoice</th>
+              <th className="d-none d-md-table-cell">Inquiry</th>
               <th>User</th>
-              <th>Unit</th>
+              <th className="d-none d-md-table-cell">Unit</th>
               <th>Jumlah</th>
               <th>Status</th>
               <th>Aksi</th>
@@ -621,15 +622,15 @@ function AdminPayments() {
                 return (
                   <tr key={payment.id}>
                     <td>{index + 1}</td>
-                    <td className="fw-semibold">{payment.reference || payment.id}</td>
-                    <td>{payment.inquiryId || '-'}</td>
+                    <td className="fw-semibold d-none d-md-table-cell">{payment.reference || payment.id}</td>
+                    <td className="d-none d-md-table-cell">{payment.inquiryId || '-'}</td>
                     <td>
                       <div className="fw-semibold text-slate-900">{(inquiry.user.name)}</div>
                         {(String(inquiry?.userId || '').trim() && String(inquiry?.user.name || '').trim() && String(inquiry?.userId || '').trim() !== String(inquiry?.userName || '').trim()) && (
-                          <div className="text-muted small">ID: {String(inquiry.userId)}</div>
+                          <div className="d-none d-md-table-cell">ID: {String(inquiry.userId)}</div>
                         )}
                     </td>
-                    <td>{inquiry?.unit.unit_type.unit_number}</td>
+                    <td className="d-none d-md-table-cell">{inquiry?.unit.unit_type.unit_number}</td>
                     <td>{inquiry ? formatCurrency(inquiry.totalPrice) : '-'}</td>
                     <td>{getStatusBadge(payment.status)}</td>
                     <td>

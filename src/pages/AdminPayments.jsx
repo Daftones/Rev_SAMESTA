@@ -70,6 +70,38 @@ function AdminPayments() {
     return resolved
   }
 
+  const handleDeletePayment = async (paymentId) => {
+    console.log('DELETE PAYMENT ID:', paymentId)
+
+    if (!paymentId) {
+      alert('ID payment tidak ditemukan')
+      return
+    }
+
+    if (!window.confirm('Yakin ingin menghapus payment ini?')) return
+
+    try {
+      setUpdatingId(paymentId)
+      await paymentsAPI.delete(paymentId)
+
+      alert('Payment berhasil dihapus')
+      handleCloseModal()
+      loadData(true)
+    } catch (err) {
+      console.error('DELETE PAYMENT ERROR:', err)
+
+      const message =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Gagal menghapus payment'
+
+      alert(message)
+    } finally {
+      setUpdatingId('')
+    }
+  }
+
   const normalizeInquiry = (raw) => {
     if (!raw) return null
     console.log(`debug inquiry`);
@@ -803,13 +835,24 @@ function AdminPayments() {
             </div>
           )}
         </Modal.Body>
+
         <Modal.Footer>
-          <Button
+          {selectedPayment?.status === 'confirmed' && (
+            <Button
               variant="outline-primary"
               onClick={printInvoice}
               disabled={!payments}
+              className="me-auto"
             >
               🖨️ Print Invoice
+            </Button>
+          )}
+          <Button
+            variant="outline-danger"
+            onClick={() => handleDeletePayment(selectedPayment.id)}
+            disabled={!!updatingId}
+          >
+            Hapus Payment
           </Button>
           <Button variant="secondary" onClick={handleCloseModal} disabled={!!updatingId}>
             Tutup

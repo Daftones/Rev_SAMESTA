@@ -247,6 +247,8 @@ const paymentsAPI = {
     return data;
   },
 
+  delete: (id) => api.delete(`/payment/${id}`),
+
   async getByInquiry(inquiryId, params = {}) {
     const { data } = await api.get("/payment", { params: { ...params, inquiry_id: inquiryId } });
     return data;

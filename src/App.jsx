@@ -26,7 +26,7 @@ import ScrollToTop from './components/ScrollToTop'
 import WhatsAppButton from './components/WhatsAppButton'
 import { Alert, Button, Container, Modal } from 'react-bootstrap'
 import Apartemenlogo from './assets/Apartemen logo.png?url'
-import AboutUsLogo from './assets/About Us logo.png?url'
+import AboutUsLogo from './assets/about-us-logo.png?url'
 import Fasilitaslogo from './assets/Facilities logo.png?url'
 
 function HomePage() {

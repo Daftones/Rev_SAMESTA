@@ -1,5 +1,5 @@
 import { Badge } from 'react-bootstrap'
-import samestaLogo from '../assets/samesta logo.png' // SESUAIKAN PATH
+import samestaLogo from '../assets/samesta logo.png' 
 
 function AdminPaymentInvoice({ payment }) {
   const formatDate = (value) => {

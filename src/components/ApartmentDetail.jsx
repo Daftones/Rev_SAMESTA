@@ -366,11 +366,11 @@ function ApartmentDetail() {
               <div className="flex flex-col gap-3">
                 <Button
                   className="rounded-full"
-                  variant={unitStatus === 'book' ? 'secondary' : 'dark'}
+                  variant={unitStatus === 'book' || unitStatus === 'sold' ? 'secondary' : 'dark'}
                   onClick={handleInquiry}
-                  disabled={unitStatus === 'book'}
+                  disabled={unitStatus === 'book' || unitStatus === 'sold'}
                 >
-                  {unitStatus === 'book' ? 'Unit Sudah Dibooking' : 'Ajukan Inquiry'}
+                  {unitStatus === 'book' || unitStatus === 'sold' ? 'Unit Sudah Dibooking' : 'Ajukan Inquiry'}
                 </Button>
 
                 <Button className="rounded-full" variant="outline-secondary" onClick={handleContactAdmin}>
@@ -421,8 +421,8 @@ function ApartmentDetail() {
       {/* Sticky CTA untuk mobile */}
       <div className="d-lg-none position-fixed bottom-0 start-0 end-0 bg-white/95 border-top border-slate-200 shadow-lg p-3">
         <div className="d-flex gap-2">
-          <Button variant="dark" className="flex-grow-1 rounded-pill" onClick={handleInquiry}>
-            Inquiry
+          <Button variant={unitStatus === 'book' || unitStatus === 'sold' ? 'secondary' : 'dark'} className="flex-grow-1 rounded-pill" disabled={unitStatus === 'book' || unitStatus === 'sold'} onClick={handleInquiry}>
+            {unitStatus === 'book' || unitStatus === 'sold' ? 'Unit Sudah Dibooking' : 'Ajukan Inquiry'}
           </Button>
           <Button variant="outline-secondary" className="rounded-pill" onClick={handleContactAdmin}>
             Admin

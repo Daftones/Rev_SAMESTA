@@ -3,10 +3,13 @@ import { Container, Table, Badge, Button, Modal, Card, Row, Col, Form, Alert, Sp
 import { paymentsAPI, inquiriesAPI, unitTypesAPI } from '../services/api'
 import { buildUnitNumberMap, formatUnitNumber } from '../utils/unitNaming'
 import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import { autoTable, applyPlugin } from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
 import ReactDOMServer from 'react-dom/server'
 import AdminPaymentInvoice from '../components/AdminPaymentInvoice'
+import samestaLogo from '../assets/samesta logo.png'
+
+applyPlugin(jsPDF);
 
 function AdminPayments() {
   const [payments, setPayments] = useState([])
@@ -102,7 +105,6 @@ function AdminPayments() {
     }
   }
 
-
   const normalizeInquiry = (raw) => {
     if (!raw) return null
     console.log(`debug inquiry`);
@@ -150,7 +152,6 @@ function AdminPayments() {
       unit: raw.unit ?? null,
     }
   }
-
 
   const deriveInquiryAmount = (inquiry) => {
     if (!inquiry) return null
@@ -523,6 +524,190 @@ function AdminPayments() {
     printWindow.document.close()
   }
 
+  function generateInvoicePDF(payment) {
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4',
+    })
+
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const pageHeight = doc.internal.pageSize.getHeight()
+
+    const formatDate = (value) =>
+      new Date(value).toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      })
+
+    const formatCurrency = (value) =>
+      new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        maximumFractionDigits: 0,
+      }).format(value || 0)
+
+    const isRent = payment.inquiry.purchase_type === 'rent'
+    const duration = payment.duration || 0
+    const depositPerMonth = 1_000_000
+
+    let rentPrice = 0
+    let deposit = 0
+    let plafond = 0
+    let tax = 0
+
+    if (isRent) {
+      deposit = duration * depositPerMonth
+      rentPrice = payment.totalPrice - deposit
+    } else {
+      plafond = payment.totalPrice / 1.12
+      tax = payment.totalPrice - plafond
+    }
+
+    /* ================= WATERMARK (BEHIND CONTENT) ================= */
+    const watermarkSize = 100
+    const watermarkX = (pageWidth - watermarkSize) / 2
+    const watermarkY = (pageHeight - watermarkSize) / 2
+
+    doc.setGState(new doc.GState({ opacity: 0.05 }))
+    doc.addImage(
+      samestaLogo,
+      'PNG',
+      watermarkX,
+      watermarkY,
+      watermarkSize,
+      watermarkSize
+    )
+    doc.setGState(new doc.GState({ opacity: 1 }))
+
+    /* ================= HEADER ================= */
+    doc.setFont('courier', 'normal')
+    doc.setFontSize(10)
+    doc.text('APARTEMEN SAMESTA JAKABARING', 15, 20)
+    doc.text('Jl. Sapta Pesona, Palembang', 15, 26)
+    doc.text('Telp: (+62) 853-6650-3363', 15, 32)
+
+    doc.setFont('courier', 'bold')
+    doc.setFontSize(18)
+    doc.text('INVOICE', pageWidth / 2, 22, { align: 'center' })
+
+    doc.setFont('courier', 'normal')
+    doc.setFontSize(10)
+    doc.text(`ID: ${payment.id}`, pageWidth - 80, 20, { maxWidth: 65 })
+    doc.text(`Date: ${formatDate(payment.createdAt)}`, pageWidth - 80, 30)
+    doc.text(
+      `Payment: ${payment.method === 'cash' ? 'Cash' : 'Transfer'}`,
+      pageWidth - 80,
+      35
+    )
+    doc.text(`Status: ${payment.status}`, pageWidth - 80, 40)
+
+    /* ================= CUSTOMER ================= */
+    doc.setFont('courier', 'normal')
+    doc.text('Customer:', 15, 50)
+    doc.text(payment.user?.name || '-', 15, 56)
+    doc.text(
+      `Unit: ${payment.inquiry?.unit?.unit_type?.name} – ${payment.inquiry?.unit?.unit_type?.unit_number}`,
+      15,
+      62
+    )
+
+    /* ================= MAIN TABLE ================= */
+    autoTable(doc, {
+      startY: 70,
+      head: [['No', 'Description', 'Qty', 'Unit Price', 'Amount']],
+      body: [
+        [
+          '1',
+          isRent
+            ? `Sewa Unit (${duration} Bulan)`
+            : 'Pembelian Unit',
+          '1',
+          formatCurrency(payment.totalPrice),
+          formatCurrency(payment.totalPrice),
+        ],
+      ],
+      styles: { font: 'courier', fontSize: 9 },
+      headStyles: { fillColor: [230, 230, 230] },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 15 },
+        2: { halign: 'center', cellWidth: 20 },
+        3: { halign: 'right' },
+        4: { halign: 'right' },
+      },
+    })
+
+    const finalY = doc.lastAutoTable.finalY + 10
+
+    const bankAccount =
+        [
+          ['Transfer via:'],
+          ['Bank Sumsel Babel – IDR'],
+          ['A/C: 20332000001'],
+          ['A/N: PERUM PERUMNAS (Rek. Proyek)'],
+        ]
+
+    autoTable(doc, {
+      startY: finalY,
+      body: bankAccount,
+      theme: 'plain',
+      styles: { 
+        font: 'courier', 
+        fontSize: 10,
+        cellPadding: {
+          top: 0.5,
+          bottom: 0.5,
+          left: 0,
+          right: 0,
+        },
+        lineHeight: 1,
+      },
+
+      columnStyles: {
+        0: { halign: 'left' },
+        1: { halign: 'right' },
+      },
+    })
+
+    /* ================= SUMMARY ================= */
+    const summary = isRent
+      ? [
+          ['Rent Price', formatCurrency(rentPrice)],
+          [`Deposito (${duration} bulan)`, formatCurrency(deposit)],
+          ['Total', formatCurrency(payment.totalPrice)],
+        ]
+      : [
+          ['Base Price', formatCurrency(plafond)],
+          ['Tax (12%)', formatCurrency(tax)],
+          ['Total', formatCurrency(payment.totalPrice)],
+        ]
+
+    autoTable(doc, {
+      startY: finalY,
+      body: summary,
+      theme: 'plain',
+      styles: { font: 'courier', fontSize: 10 },
+      columnStyles: {
+        0: { halign: 'left' },
+        1: { halign: 'right' },
+      },
+      margin: { left: pageWidth - 90 },
+    })
+
+    /* ================= FOOTER NOTE ================= */
+    doc.setFont('courier', 'normal')
+    doc.setFontSize(9)
+    doc.text(
+      'Pembayaran dianggap lunas setelah dana diterima.',
+      pageWidth / 2,
+      pageHeight - 35,
+      { align: 'center' }
+    )
+
+    doc.save(`Invoice-${payment.id}.pdf`)
+  }
+
   return (
     <Container fluid className="py-4 px-3">
       {error && (
@@ -839,12 +1024,7 @@ function AdminPayments() {
 
         <Modal.Footer>
           {selectedPayment?.status === 'confirmed' && (
-            <Button
-              variant="outline-primary"
-              onClick={printInvoice}
-              disabled={!payments}
-              className="me-auto"
-            >
+            <Button onClick={() => generateInvoicePDF(selectedPayment)}>
               🖨️ Print Invoice
             </Button>
           )}

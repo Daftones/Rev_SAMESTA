@@ -533,14 +533,6 @@ function AdminInquiries() {
           <h2 className="fw-bold mb-0">Kelola Inquiry</h2>
           <p className="text-muted mb-0">Total: {inquiries.length} inquiry</p>
         </div>
-        <div className="d-flex flex-wrap gap-2">
-          <Button variant="outline-secondary" size="sm" onClick={exportExcel}>
-            Export Excel
-          </Button>
-          <Button variant="outline-secondary" size="sm" onClick={exportPDF}>
-            Export PDF
-          </Button>
-        </div>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3 mb-3">

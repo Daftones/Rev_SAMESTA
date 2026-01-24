@@ -439,10 +439,12 @@ function AdminPayments() {
       return {
         'No': index + 1,
         'Invoice': payment.reference || payment.id,
-        'Inquiry ID': payment.inquiryId || '-',
-        'User ID': inquiry?.userId || payment.userId || '-',
+        'Nama Lengkap': inquiry?.user.name || payment.userId || '-',
+        'Tipe Unit': inquiry?.unit.unit_type.name,
+        'Unit': inquiry?.unit.unit_type.unit_number,
+        'Tipe Pembelian': inquiry?.purchaseType,
+        'Durasi Sewa (bulan)': inquiry?.purchaseType === 'rent' ? inquiry?.duration || '-' : '-',
         'Jumlah': numberAmountForExport(displayAmount),
-        'Status': getStatusText(payment.status),
         'Metode': payment.method || '-',
         'Dibuat': payment.createdAt ? new Date(payment.createdAt).toLocaleString('id-ID') : '-'
       }
@@ -732,9 +734,6 @@ function AdminPayments() {
           <Button variant="outline-success" size="sm" onClick={exportToExcel} disabled={loading || filteredPayments.length === 0}>
             Export Excel
           </Button>
-          <Button variant="outline-danger" size="sm" onClick={exportToPDF} disabled={loading || filteredPayments.length === 0}>
-            Export PDF
-          </Button>
           <Button variant="outline-primary" size="sm" onClick={() => loadData(false)} disabled={refreshing}>
             {refreshing ? 'Menyinkronkan...' : 'Sinkronkan sekarang'}
           </Button>
@@ -758,11 +757,8 @@ function AdminPayments() {
             <Form.Label className="small text-muted">Metode</Form.Label>
             <Form.Select value={filters.method} onChange={(e) => setFilters((prev) => ({ ...prev, method: e.target.value }))}>
               <option value="all">Semua</option>
-              <option value="Manual">Manual</option>
+              <option value="Manual">Cash</option>
               <option value="Transfer">Transfer</option>
-              <option value="Cash">Cash</option>
-              <option value="Virtual Account">Virtual Account</option>
-              <option value="Credit Card">Credit Card</option>
             </Form.Select>
           </div>
           <div className="col-6 col-md-3">

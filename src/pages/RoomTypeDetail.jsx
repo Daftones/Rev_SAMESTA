@@ -3,12 +3,54 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { unitTypesAPI } from '../services/api'
 
-import studioHero from '../assets/Studio room.png'
-import twoBedHero from '../assets/2 bedroom.png'
+import studioHero from '../assets/Studio room 1.jpeg'
+import twoBedHero from '../assets/2 bedroom 1.jpeg'
 
 function RoomTypeDetail() {
   const { type } = useParams()
   const navigate = useNavigate()
+
+  const canonicalType = useMemo(() => {
+    const raw = String(type || '').trim().toLowerCase()
+    if (!raw) return 'studio'
+
+    const aliases = {
+      studio: 'studio',
+      'studio-room': 'studio',
+      studioroom: 'studio',
+
+      '2bedroom': '2bedroom',
+      '2-bedroom': '2bedroom',
+      '2br': '2bedroom',
+      '2bed': '2bedroom',
+      twobed: '2bedroom',
+      'two-bed': '2bedroom',
+      twobedroom: '2bedroom',
+      'two-bedroom': '2bedroom',
+      two_bed: '2bedroom',
+      two_bedroom: '2bedroom',
+    }
+
+    if (aliases[raw]) return aliases[raw]
+
+    // Fallback heuristic
+    if (raw.includes('studio')) return 'studio'
+    if ((raw.includes('2') && raw.includes('bed')) || raw.includes('2br')) return '2bedroom'
+
+    return 'studio'
+  }, [type])
+
+  useEffect(() => {
+    // Keep URL canonical and limited to supported room types.
+    const raw = String(type || '').trim().toLowerCase()
+    if (!raw) {
+      navigate('/room-type/studio', { replace: true })
+      return
+    }
+    if (raw !== canonicalType) {
+      navigate(`/room-type/${canonicalType}`, { replace: true })
+    }
+  }, [type, canonicalType, navigate])
 
   const [units, setUnits] = useState([])
   const [loading, setLoading] = useState(false)
@@ -33,16 +75,28 @@ function RoomTypeDetail() {
   }, [])
 
   const parsedRoom = useMemo(() => {
+    const inferSlug = (name) => {
+      const n = String(name || '').toLowerCase()
+      if (!n) return null
+      if (n.includes('studio')) return 'studio'
+      if (n.includes('2br')) return '2bedroom'
+      if (n.includes('2') && n.includes('bed')) return '2bedroom'
+      if (n.includes('two') && n.includes('bed')) return '2bedroom'
+      return null
+    }
+
     const normalized = units.map((item) => {
       const name = item.name || ''
       const lowerName = name.toLowerCase()
       const isStudio = lowerName.includes('studio')
+      const slug = inferSlug(name) || (isStudio ? 'studio' : '2bedroom')
       const sizeVal = Number.parseFloat(item.size)
       const rentValue = Number(item.rent_price)
       const saleValue = Number(item.sale_price)
 
       return {
         id: item.unit_type_id || item.id,
+        slug,
         name: name || (isStudio ? 'Studio Room' : '2 Bedroom'),
         size: Number.isFinite(sizeVal) ? `${sizeVal} m²` : item.size || '-',
         description: item.description || (isStudio
@@ -55,9 +109,9 @@ function RoomTypeDetail() {
         ideal: isStudio ? 'Profesional muda, mahasiswa, atau pasangan baru' : 'Keluarga kecil atau pekerja dengan ruang kerja',
         hero: isStudio ? studioHero : twoBedHero,
       }
-    })
+    }).filter((r) => r.slug === 'studio' || r.slug === '2bedroom')
 
-    const pick = normalized.find((r) => r.slug === type) || normalized.find((r) => r.slug === 'studio')
+    const pick = normalized.find((r) => r.slug === canonicalType) || normalized.find((r) => r.slug === 'studio')
 
     // When API yields data, enrich with aggregated ranges per slug
     if (pick) {
@@ -82,35 +136,66 @@ function RoomTypeDetail() {
     }
 
     // Fallback static content if API empty
-    return {
-      slug: 'studio',
-      name: 'Studio Room',
-      size: '24 m²',
-      description: 'Unit studio yang kompak dan efisien, cocok untuk profesional muda atau pasangan yang mencari hunian praktis.',
-      features: [
-        'Ruang tidur terintegrasi dengan ruang tamu',
-        'Kitchenette dengan kompor dan kitchen sink',
-        'Kamar mandi dalam dengan shower',
-        'Lemari pakaian built-in',
-        'AC dan water heater',
-        'Balkon pribadi'
-      ],
-      facilities: [
-        'Kasur queen size',
-        'Meja kerja',
-        'Kursi',
-        'Lemari es kecil',
-        'TV cable ready',
-        'Internet ready'
-      ],
-      rentPrice: 2500000,
-      salePrice: null,
-      rentRange: { min: 2500000 * 0.95, max: 2500000 * 1.05 },
-      saleRange: null,
-      ideal: 'Profesional muda, mahasiswa, atau pasangan baru',
-      hero: studioHero,
+    const fallbacks = {
+      studio: {
+        slug: 'studio',
+        name: 'Studio Room',
+        size: '24 m²',
+        description: 'Unit studio yang kompak dan efisien, cocok untuk profesional muda atau pasangan yang mencari hunian praktis.',
+        features: [
+          'Ruang tidur terintegrasi dengan ruang tamu',
+          'Kitchenette dengan kompor dan kitchen sink',
+          'Kamar mandi dalam dengan shower',
+          'Lemari pakaian built-in',
+          'AC dan water heater',
+          'Balkon pribadi'
+        ],
+        facilities: [
+          'Kasur queen size',
+          'Meja kerja',
+          'Kursi',
+          'Lemari es kecil',
+          'TV cable ready',
+          'Internet ready'
+        ],
+        rentPrice: 2500000,
+        salePrice: null,
+        rentRange: { min: 2500000 * 0.95, max: 2500000 * 1.05 },
+        saleRange: null,
+        ideal: 'Profesional muda, mahasiswa, atau pasangan baru',
+        hero: studioHero,
+      },
+      '2bedroom': {
+        slug: '2bedroom',
+        name: '2 Bedroom',
+        size: '48 m²',
+        description: 'Unit 2 kamar tidur yang luas dan nyaman, ideal untuk keluarga kecil atau ruang kerja tambahan.',
+        features: [
+          '2 kamar tidur terpisah',
+          'Ruang tamu dan ruang makan',
+          'Dapur dengan area memasak',
+          'Kamar mandi dalam',
+          'AC dan water heater',
+          'Balkon pribadi'
+        ],
+        facilities: [
+          'Kasur',
+          'Meja makan',
+          'Lemari pakaian',
+          'TV cable ready',
+          'Internet ready'
+        ],
+        rentPrice: 4500000,
+        salePrice: null,
+        rentRange: { min: 4500000 * 0.95, max: 4500000 * 1.05 },
+        saleRange: null,
+        ideal: 'Keluarga kecil atau pekerja dengan ruang kerja',
+        hero: twoBedHero,
+      },
     }
-  }, [units, type])
+
+    return fallbacks[canonicalType] || fallbacks.studio
+  }, [units, canonicalType])
 
   const formatShortCurrency = (value) => {
     const numeric = Number(value)
@@ -164,6 +249,23 @@ function RoomTypeDetail() {
               <div className="flex items-center gap-3 mb-6">
                 <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-0 break-words">{parsedRoom.name}</h1>
                 <Badge bg="success" className="rounded-full px-3 py-2 text-sm">{parsedRoom.size}</Badge>
+              </div>
+
+              <div className="flex flex-wrap gap-2 mb-6">
+                <Button
+                  className="rounded-full px-4"
+                  variant={canonicalType === 'studio' ? 'dark' : 'outline-dark'}
+                  onClick={() => navigate('/room-type/studio')}
+                >
+                  Studio Room
+                </Button>
+                <Button
+                  className="rounded-full px-4"
+                  variant={canonicalType === '2bedroom' ? 'dark' : 'outline-dark'}
+                  onClick={() => navigate('/room-type/2bedroom')}
+                >
+                  2 Bedroom
+                </Button>
               </div>
 
           <Row className="g-4">
